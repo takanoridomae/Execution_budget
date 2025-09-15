@@ -1,0 +1,353 @@
+import { useState } from 'react';
+import { useTransactions } from '../contexts/TransactionContext';
+import { Transaction, IncomeCategory, ExpenseCategory } from '../types';
+import { useAlert } from './useAlert';
+import { 
+  saveImagesHybridBatch,
+  getImageFromLocalStorage,
+  deleteImageFromLocalStorage,
+  deleteImageFromFirebaseStorage
+} from '../utils/imageUtils';
+
+export interface EditForm {
+  amount: string;
+  category: string;
+  content: string;
+  imageFiles: File[];
+  imagePreviews: string[];
+  existingImageIds: string[]; // ローカルストレージ用の画像ID
+  existingImageUrls: string[]; // 後方互換性のため残す
+}
+
+export const useTransactionEdit = () => {
+  const { updateTransaction, deleteTransaction } = useTransactions();
+  const { alert, showSuccess, showError } = useAlert();
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    amount: '',
+    category: '',
+    content: '',
+    imageFiles: [],
+    imagePreviews: [],
+    existingImageIds: [],
+    existingImageUrls: []
+  });
+
+  // 編集開始
+  const startEdit = (transaction: Transaction) => {
+    console.log('📝 編集開始', {
+      transactionId: transaction.id,
+      hasImageIds: !!transaction.imageIds,
+      imageIdsCount: transaction.imageIds?.length || 0,
+      imageIds: transaction.imageIds,
+      hasImageUrls: !!transaction.imageUrls,
+      imageUrlsCount: transaction.imageUrls?.length || 0,
+      imageUrls: transaction.imageUrls
+    });
+    
+    setEditingTransaction(transaction);
+    setEditForm({
+      amount: transaction.amount.toString(),
+      category: transaction.category,
+      content: transaction.content || '',
+      imageFiles: [],
+      imagePreviews: [],
+      existingImageIds: transaction.imageIds || [],
+      existingImageUrls: transaction.imageUrls || [] // 後方互換性
+    });
+    
+    // ローカルストレージの画像存在確認
+    if (transaction.imageIds) {
+      transaction.imageIds.forEach((imageId, index) => {
+        const imageData = getImageFromLocalStorage(transaction.id, imageId);
+        console.log(`🖼️ 画像${index + 1} (${imageId}):`, imageData ? '存在' : '不在');
+      });
+    }
+  };
+
+  // 編集キャンセル
+  const cancelEdit = () => {
+    setEditingTransaction(null);
+    setEditForm({ 
+      amount: '', 
+      category: '', 
+      content: '',
+      imageFiles: [],
+      imagePreviews: [],
+      existingImageIds: [],
+      existingImageUrls: []
+    });
+  };
+
+  // フォーム更新
+  const updateEditForm = (field: keyof EditForm, value: string) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // 画像ファイル選択処理
+  const handleImageFilesChange = (files: File[]) => {
+    console.log('📁 画像ファイル選択', {
+      newFiles: files.length,
+      existingFiles: editForm.imageFiles.length,
+      selectedFiles: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
+    });
+    
+    const nextFiles = [...editForm.imageFiles, ...files].slice(0, 5); // 最大5枚制限
+    const previews = nextFiles.map(file => URL.createObjectURL(file));
+    
+    console.log('📁 ファイル状態更新', {
+      totalFiles: nextFiles.length,
+      previews: previews.length
+    });
+    
+    setEditForm(prev => ({
+      ...prev,
+      imageFiles: nextFiles,
+      imagePreviews: previews
+    }));
+  };
+
+  // 新規画像の削除
+  const removeNewImage = (index: number) => {
+    const newFiles = editForm.imageFiles.filter((_, i) => i !== index);
+    const newPreviews = editForm.imagePreviews.filter((_, i) => i !== index);
+    setEditForm(prev => ({
+      ...prev,
+      imageFiles: newFiles,
+      imagePreviews: newPreviews
+    }));
+  };
+
+  // 既存画像の削除
+  const removeExistingImage = (index: number) => {
+    console.log('🗑️ 画像削除処理開始', {
+      index,
+      totalImageIds: editForm.existingImageIds.length,
+      totalImageUrls: editForm.existingImageUrls.length,
+      imageIds: editForm.existingImageIds,
+      imageUrls: editForm.existingImageUrls
+    });
+    
+    // ローカルストレージの画像削除
+    if (index < editForm.existingImageIds.length) {
+      const imageIdToDelete = editForm.existingImageIds[index];
+      if (editingTransaction) {
+        console.log('🗑️ ローカルストレージから画像削除', { 
+          transactionId: editingTransaction.id,
+          imageId: imageIdToDelete,
+          index 
+        });
+        deleteImageFromLocalStorage(editingTransaction.id, imageIdToDelete);
+        
+        // 削除後の確認
+        const stillExists = getImageFromLocalStorage(editingTransaction.id, imageIdToDelete);
+        console.log('🔍 削除確認', { imageId: imageIdToDelete, stillExists: !!stillExists });
+      }
+      
+      const newIds = editForm.existingImageIds.filter((_, i) => i !== index);
+      console.log('📝 更新後のImageIds', { before: editForm.existingImageIds, after: newIds });
+      
+      setEditForm(prev => ({
+        ...prev,
+        existingImageIds: newIds
+      }));
+    } else {
+      // Firebase Storage画像の場合（後方互換性）
+      const urlIndex = index - editForm.existingImageIds.length;
+      console.log('🗑️ Firebase Storage画像削除', { urlIndex, url: editForm.existingImageUrls[urlIndex] });
+      
+      const newUrls = editForm.existingImageUrls.filter((_, i) => i !== urlIndex);
+      setEditForm(prev => ({
+        ...prev,
+        existingImageUrls: newUrls
+      }));
+    }
+  };
+
+  // ハイブリッド画像保存（Firebase優先→ローカル フォールバック、デバイス間同期対応）
+  const saveNewImages = async (): Promise<{
+    imageIds: string[];
+    imageUrls: string[];
+    saveReport: string;
+  }> => {
+    if (!editingTransaction || editForm.imageFiles.length === 0) {
+      console.log('📸 保存対象なし', {
+        hasTransaction: !!editingTransaction,
+        imageFilesCount: editForm.imageFiles.length
+      });
+      return { imageIds: [], imageUrls: [], saveReport: '保存対象なし' };
+    }
+    
+    console.log('💾 編集画像ハイブリッド保存開始（デバイス間同期優先）', {
+      transactionId: editingTransaction.id,
+      fileCount: editForm.imageFiles.length,
+      files: editForm.imageFiles.map(f => ({ name: f.name, size: f.size }))
+    });
+    
+    try {
+      const results = await saveImagesHybridBatch(editingTransaction.id, editForm.imageFiles);
+      
+      const imageIds = results.filter(r => r.imageId).map(r => r.imageId!);
+      const imageUrls = results.filter(r => r.imageUrl).map(r => r.imageUrl!);
+      
+      const localCount = results.filter(r => r.saveMethod === 'local').length;
+      const firebaseCount = results.filter(r => r.saveMethod === 'firebase').length;
+      
+      let saveReport = `${results.length}枚保存完了`;
+      if (localCount > 0 && firebaseCount > 0) {
+        saveReport += ` (クラウド: ${firebaseCount}枚、ローカル: ${localCount}枚)`;
+      } else if (firebaseCount > 0) {
+        saveReport += ` (クラウド保存・デバイス間同期対応)`;
+      } else if (localCount > 0) {
+        saveReport += ` (ローカル保存・Firebase準備中)`;
+      }
+      
+      console.log('✅ 編集画像ハイブリッド保存完了', {
+        成功数: results.length,
+        ローカル: localCount,
+        Firebase: firebaseCount,
+        imageIds,
+        imageUrls
+      });
+      
+      return { imageIds, imageUrls, saveReport };
+      
+    } catch (error: any) {
+      console.error('❌ 編集画像保存失敗:', error);
+      throw new Error(`画像の保存に失敗しました: ${error.message}`);
+    }
+  };
+
+  // 編集保存処理
+  const handleSave = async () => {
+    if (!editingTransaction) return;
+
+    try {
+      console.log('🚀 編集保存開始', {
+        transactionId: editingTransaction.id,
+        imageFiles: editForm.imageFiles.length,
+        existingImageIds: editForm.existingImageIds.length,
+        existingImageUrls: editForm.existingImageUrls.length
+      });
+
+      // 新規画像がある場合はハイブリッド保存
+      let newImageIds: string[] = [];
+      let newImageUrls: string[] = [];
+      let saveReport = '';
+      
+      if (editForm.imageFiles.length > 0) {
+        console.log('💾 新規画像ハイブリッド保存開始（デバイス間同期優先）', { 
+          fileCount: editForm.imageFiles.length,
+          files: editForm.imageFiles.map(f => ({ name: f.name, size: f.size }))
+        });
+        
+        try {
+          // 新規画像をハイブリッド保存
+          const result = await saveNewImages();
+          newImageIds = result.imageIds;
+          newImageUrls = result.imageUrls;
+          saveReport = result.saveReport;
+          
+          console.log('💾 新規画像ハイブリッド保存完了', { newImageIds, newImageUrls, saveReport });
+        } catch (saveError: any) {
+          console.error('❌ 画像保存エラー', saveError);
+          showError(`画像の保存に失敗しました: ${saveError.message}`);
+          return; // 保存処理を中断
+        }
+      }
+      
+      // 既存画像IDと新規画像IDを結合
+      const allImageIds = [...editForm.existingImageIds, ...newImageIds];
+      // 既存画像URLと新規画像URLを結合
+      const allImageUrls = [...editForm.existingImageUrls, ...newImageUrls];
+      
+      console.log('🔗 画像ID結合', { 
+        existingIds: editForm.existingImageIds,
+        newIds: newImageIds,
+        allIds: allImageIds,
+        existingUrls: allImageUrls
+      });
+      
+      // 削除された画像をログで確認
+      const originalImageIds = editingTransaction.imageIds || [];
+      const deletedImageIds = originalImageIds.filter(id => !allImageIds.includes(id));
+      if (deletedImageIds.length > 0) {
+        console.log('🗑️ 削除された画像ID', deletedImageIds);
+        // 削除された画像をローカルストレージからも確実に削除
+        deletedImageIds.forEach(imageId => {
+          deleteImageFromLocalStorage(editingTransaction.id, imageId);
+        });
+      }
+      
+      const updateData: any = {
+        amount: Number(editForm.amount),
+        category: editForm.category as IncomeCategory | ExpenseCategory,
+        content: editForm.content
+      };
+      
+      // undefinedを送信しないよう条件分岐で追加
+      if (allImageIds.length > 0) {
+        updateData.imageIds = allImageIds;
+      }
+      
+      if (allImageUrls.length > 0) {
+        updateData.imageUrls = allImageUrls;
+      }
+      
+      console.log('💾 更新データ', updateData);
+      
+      await updateTransaction(editingTransaction.id, updateData);
+      console.log('✅ 取引更新完了');
+      
+      const successMessage = saveReport ? 
+        `取引を更新しました！${saveReport}` : 
+        '取引を更新しました！';
+      showSuccess(successMessage);
+      setEditingTransaction(null);
+      setEditForm({ 
+        amount: '', 
+        category: '', 
+        content: '',
+        imageFiles: [],
+        imagePreviews: [],
+        existingImageIds: [],
+        existingImageUrls: []
+      });
+    } catch (error: any) {
+      console.error('❌ 編集保存エラー', error);
+      
+      // エラーの種類に応じてメッセージを変更
+      if (error?.code === 'permission-denied') {
+        showError('権限がありません。ログインし直してください。');
+      } else if (error?.code === 'unavailable') {
+        showError('ネットワークに接続できません。接続を確認してください。');
+      } else {
+        showError('更新に失敗しました。もう一度お試しください。');
+      }
+    }
+  };
+
+  // 削除処理
+  const handleDelete = async (transactionId: string) => {
+    try {
+      await deleteTransaction(transactionId);
+      showSuccess('取引を削除しました');
+    } catch (error) {
+      showError('削除に失敗しました');
+    }
+  };
+
+  return {
+    editingTransaction,
+    editForm,
+    alert,
+    startEdit,
+    cancelEdit,
+    updateEditForm,
+    handleSave,
+    handleDelete,
+    handleImageFilesChange,
+    removeNewImage,
+    removeExistingImage
+  };
+};

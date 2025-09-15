@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # 生活管理確認システム（ローカルネットワーク配布用）
+  household-budget-app:
+    build: .
+    ports:
+      - "3000:3000"
+    networks:
+      - local-network
+    environment:
+      - REACT_APP_LOCAL_NETWORK=true
+      - REACT_APP_ENVIRONMENT=local-network
+    restart: unless-stopped
+    container_name: life-management-system-local
+
+  # Firebaseエミュレータ（オプション）
+  firebase-emulator:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "9000:9000"  # Firebase UI
+      - "8080:8080"  # Firestore
+      - "9199:9199"  # Storage
+    command: >
+      sh -c "npm install -g firebase-tools &&
+             firebase emulators:start --only firestore,storage"
+    networks:
+      - local-network
+    restart: unless-stopped
+    container_name: firebase-emulator-local
+    depends_on:
+      - household-budget-app
+
+networks:
+  local-network:
+    driver: bridge
