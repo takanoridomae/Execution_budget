@@ -4,7 +4,7 @@ import { useTheme } from '@mui/material/styles';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useTransactionData } from '../hooks/useTransactionData';
-import MonthlySummary from './MonthlySummary';
+// MonthlySummaryは削除されました（現場ベース管理に移行）
 
 const Calendar: React.FC = () => {
   const [selectedDateDay, setSelectedDateDay] = useState<number | null>(null);
@@ -322,10 +322,7 @@ const Calendar: React.FC = () => {
   };
 
   return (
-    <Box>
-      {/* 月のサマリー */}
-      <MonthlySummary year={displayYear} month={displayMonth} />
-      
+    <Box>      
       <Paper elevation={2} sx={{ p: 3 }}>
         {/* ヘッダー */}
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>

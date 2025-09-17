@@ -122,7 +122,8 @@ const Report: React.FC = () => {
   const onYearChange = (e: any) => setSelectedYear(Number(e.target.value));
   const onMonthChange = (e: any) => setSelectedMonth(Number(e.target.value));
 
-  const { getBudgetSettings } = useBudget();
+  // getBudgetSettingsは削除されました（現場ベース管理に移行）
+  // const { getBudgetSettings } = useBudget();
 
   useEffect(() => {
     const base = selectedDate ?? new Date();
@@ -211,7 +212,8 @@ const Report: React.FC = () => {
 
   const monthLabel = `${year}年${month}月`;
 
-  const budgetInfo = getBudgetSettings(year, month);
+  // 現場ベース管理に移行したため、一時的に無効化
+  const budgetInfo = { monthlyBudget: 0, savingsGoal: 0, breakdown: [] };
   const budgetForMonth = budgetInfo?.monthlyBudget ?? 0;
   const remainingBudget = budgetForMonth - expenseTotal;
   const todayDate = new Date();
@@ -455,8 +457,7 @@ const Report: React.FC = () => {
 
             {/* カテゴリー別予算vs支出 */}
             {(() => {
-              // 予算設定されているカテゴリーを取得
-              const budgetedCategories = budgetInfo?.breakdown || [];
+              // 現場ベース管理に移行したため、予算比較機能は簡素化
               
               // 支出があるすべてのカテゴリーを取得
               const expenseCategories = Array.from(new Set(
@@ -465,15 +466,9 @@ const Report: React.FC = () => {
                   .map(t => t.category)
               ));
               
-              // 予算設定カテゴリーと支出カテゴリーをマージ
-              const budgetCategories = budgetedCategories.map(b => b.category);
-              const allCategoriesArray = [...budgetCategories, ...expenseCategories];
-              const allCategories = Array.from(new Set(allCategoriesArray));
-              
-              // 表示用データを作成
-              const categoryData = allCategories.map(category => {
-                const budgetItem = budgetedCategories.find(b => b.category === category);
-                const budgetAmount = budgetItem?.amount || 0;
+              // 表示用データを作成（現場ベース管理移行により予算比較は簡素化）
+              const categoryData = expenseCategories.map(category => {
+                const budgetAmount = 0; // 現場ベース管理に移行したため一時的に0
                 const categoryExpense = monthTransactions
                   .filter(t => t.type === 'expense' && t.category === category)
                   .reduce((sum, t) => sum + t.amount, 0);
@@ -481,8 +476,7 @@ const Report: React.FC = () => {
                 return {
                   category,
                   budgetAmount,
-                  categoryExpense,
-                  budgetItem
+                  categoryExpense
                 };
               }).filter(item => item.categoryExpense > 0 || item.budgetAmount > 0); // 支出があるか予算があるもののみ表示
               

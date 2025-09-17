@@ -39,3 +39,54 @@ export interface BudgetItem {
     content: string;
     amount: number;
 }
+
+// 現場情報
+export interface Site {
+    id: string;
+    name: string;
+    description?: string;
+    comment?: string;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+// 現場別カテゴリー
+export interface SiteCategory {
+    id: string;
+    siteId: string;
+    name: string;
+    description?: string;
+    comment?: string;
+    budgetAmount: number;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+// 現場別予算設定
+export interface SiteBudgetSettings {
+    siteId: string;
+    totalBudget: number;
+    categories: SiteCategory[];
+    comment?: string;
+    yearMonth: string; // "2024-01" 形式
+}
+
+// 現場別予算設定マップ
+export interface SiteBudgetSettingsMap {
+    [yearMonthSiteKey: string]: SiteBudgetSettings; // "2024-01_site123" 形式
+}
+
+// トランザクションに現場情報を追加
+export interface SiteTransaction {
+    id: string;
+    amount: number;
+    content: string;
+    date: string;
+    type: TransactionType;
+    siteId: string;
+    categoryId: string;
+    imageUrls?: string[];
+    imageIds?: string[];
+}

@@ -1,15 +1,17 @@
 import React from 'react';
-import { Box, Container, IconButton, Slide, useMediaQuery } from '@mui/material';
+import { Box, Container, IconButton, Slide, useMediaQuery, Alert, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Close } from '@mui/icons-material';
 import Calendar from '../components/Calendar';
 import TransactionMenu from '../components/TransactionMenu';
-import TransactionForm from '../components/TransactionForm';
+import SiteTransactionForm from '../components/SiteTransactionForm';
 import TransactionDetails from '../components/TransactionDetails';
 import { useTransactions } from '../contexts/TransactionContext';
+import { useSites } from '../contexts/SiteContext';
 
 const Home: React.FC = () => {
   const { showTransactionForm, setShowTransactionForm, selectedDate, setSelectedDate, isDateClicked, setIsDateClicked } = useTransactions();
+  const { activeSites } = useSites();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
 
@@ -96,7 +98,15 @@ const Home: React.FC = () => {
             overflow: { xs: 'auto', lg: 'visible' },
             p: { xs: 0, lg: 0 }
           }}>
-            <TransactionForm />
+            {activeSites.length > 0 ? (
+              <SiteTransactionForm />
+            ) : (
+              <Box p={2}>
+                <Alert severity="warning">
+                  現場が登録されていません。まず現場を登録してください。
+                </Alert>
+              </Box>
+            )}
           </Box>
         </Box>
       )}

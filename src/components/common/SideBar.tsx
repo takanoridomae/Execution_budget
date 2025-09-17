@@ -24,6 +24,8 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PersonIcon from '@mui/icons-material/Person';
 import HelpIcon from '@mui/icons-material/Help';
+import BusinessIcon from '@mui/icons-material/Business';
+import CategoryIcon from '@mui/icons-material/Category';
 import { useTransactions } from '../../contexts/TransactionContext';
 
 interface SideBarProps {
@@ -40,6 +42,12 @@ const navigationItems = [
   { text: 'ホーム', icon: <HomeIcon />, path: '/' },
   { text: 'ダッシュボード', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'レポート', icon: <AssessmentIcon />, path: '/report' },
+];
+
+// 現場管理メニュー
+const siteManagementItems = [
+  { text: '現場管理', icon: <BusinessIcon />, path: '/site-management' },
+  { text: 'カテゴリー管理', icon: <CategoryIcon />, path: '/category-management' },
 ];
 
 const settingsItems = [
@@ -70,7 +78,7 @@ const SideBar: React.FC<SideBarProps> = ({
   const topExpenses = React.useMemo(() => {
     if (!transactions) return [] as any[];
     const [year, month] = selectedMonth.split('-').map((n) => parseInt(n, 10));
-    const monthTx = transactions.filter((t) => t.type === 'expense' && t.date.startsWith(`${year}-${String(month).padStart(2,'0')}`));
+    const monthTx = transactions.filter((t) => t.type === 'expense' && t.date && t.date.startsWith(`${year}-${String(month).padStart(2,'0')}`));
     if (viewMode === 'date') {
       const byDate = new Map<string, number>();
       monthTx.forEach((t) => {
@@ -96,6 +104,51 @@ const SideBar: React.FC<SideBarProps> = ({
       {/* メインナビゲーション */}
       <List>
         {navigationItems.map((item, index) => (
+          <ListItem key={index} disablePadding>
+            <NavLink
+              to={item.path}
+              style={navLinkStyle}
+            >
+              {({ isActive }) => (
+                <ListItemButton
+                  selected={isActive}
+                  sx={{
+                    '&.Mui-selected': {
+                      backgroundColor: 'rgba(255, 235, 238, 0.8)', // とても薄い赤色
+                      '& .MuiListItemIcon-root': {
+                        color: '#d32f2f', // 薄い赤色
+                      },
+                      '& .MuiListItemText-primary': {
+                        color: '#d32f2f', // 薄い赤色
+                        fontWeight: 'bold',
+                      },
+                    },
+                    '&:hover': {
+                      backgroundColor: (theme) => theme.palette.action.hover,
+                    },
+                  }}
+                >
+                  <ListItemIcon>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText primary={item.text} />
+                </ListItemButton>
+              )}
+            </NavLink>
+          </ListItem>
+        ))}
+      </List>
+      
+      <Divider />
+      
+      {/* 現場管理メニュー */}
+      <List>
+        <ListItem>
+          <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}>
+            現場管理
+          </Typography>
+        </ListItem>
+        {siteManagementItems.map((item, index) => (
           <ListItem key={index} disablePadding>
             <NavLink
               to={item.path}

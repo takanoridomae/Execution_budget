@@ -4,9 +4,10 @@ import { db } from '../firebase';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { arrayUnion } from 'firebase/firestore';
-import { Transaction } from '../types';
+import { Transaction, SiteTransaction } from '../types';
 
 interface TransactionContextType {
+  // 既存のトランザクション機能
   transactions: Transaction[];
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<string>;
   updateTransaction: (id: string, updates: Partial<Omit<Transaction, 'id'>>) => Promise<void>;
@@ -22,6 +23,16 @@ interface TransactionContextType {
   // 取引明細モーダルの状態
   showTransactionDetailsModal: boolean;
   setShowTransactionDetailsModal: (show: boolean) => void;
+  
+  // 新しい現場ベーストランザクション機能
+  siteTransactions: SiteTransaction[];
+  addSiteTransaction: (transaction: Omit<SiteTransaction, 'id'>) => Promise<string>;
+  updateSiteTransaction: (id: string, updates: Partial<Omit<SiteTransaction, 'id'>>) => Promise<void>;
+  deleteSiteTransaction: (id: string) => Promise<void>;
+  getSiteTransactionsBySite: (siteId: string) => SiteTransaction[];
+  getSiteTransactionsByCategory: (categoryId: string) => SiteTransaction[];
+  getSiteTransactionsBySiteAndCategory: (siteId: string, categoryId: string) => SiteTransaction[];
+  siteTransactionLoading: boolean;
 }
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined);
@@ -40,12 +51,18 @@ interface TransactionProviderProps {
 
 export const TransactionProvider: React.FC<TransactionProviderProps> = ({ children }) => {
   console.log('🚀 TransactionProvider コンポーネントが初期化されています...');
+  
+  // 既存のトランザクション状態
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [isDateClicked, setIsDateClicked] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showTransactionDetailsModal, setShowTransactionDetailsModal] = useState(false);
+  
+  // 新しい現場ベーストランザクション状態
+  const [siteTransactions, setSiteTransactions] = useState<SiteTransaction[]>([]);
+  const [siteTransactionLoading, setSiteTransactionLoading] = useState(true);
   
   console.log('🔧 初期状態:', { transactionsLength: transactions.length, loading });
 
@@ -141,6 +158,28 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     }
   };
 
+  // 現場ベーストランザクションを取得
+  const fetchSiteTransactions = async () => {
+    try {
+      console.log('🏗️ 現場ベーストランザクションを取得中...');
+      
+      const querySnapshot = await getDocs(collection(db, 'SiteTransactions'));
+      console.log('🏗️ 現場ベーストランザクション数:', querySnapshot.docs.length);
+      
+      const siteTransactionsData = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as SiteTransaction[];
+      
+      console.log('🏗️ 取得した現場ベーストランザクション:', siteTransactionsData);
+      setSiteTransactions(siteTransactionsData);
+    } catch (error) {
+      console.error('❌ 現場ベーストランザクション取得エラー:', error);
+    } finally {
+      setSiteTransactionLoading(false);
+    }
+  };
+
   const addTransaction = async (transaction: Omit<Transaction, 'id'>): Promise<string> => {
     try {
       const docRef = await addDoc(collection(db, 'Transactions'), transaction);
@@ -227,11 +266,88 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     }
   };
 
+  // 現場ベーストランザクションの管理関数
+
+  // 現場ベーストランザクションを追加
+  const addSiteTransaction = async (transaction: Omit<SiteTransaction, 'id'>): Promise<string> => {
+    try {
+      console.log('🏗️ 現場ベーストランザクション追加:', transaction);
+      const docRef = await addDoc(collection(db, 'SiteTransactions'), transaction);
+      const newTransaction: SiteTransaction = {
+        id: docRef.id,
+        ...transaction,
+      };
+      setSiteTransactions(prev => [...prev, newTransaction]);
+      console.log('✅ 現場ベーストランザクション追加成功:', newTransaction);
+      return docRef.id;
+    } catch (error) {
+      console.error('❌ 現場ベーストランザクション追加エラー:', error);
+      throw error;
+    }
+  };
+
+  // 現場ベーストランザクションを更新
+  const updateSiteTransaction = async (id: string, updates: Partial<Omit<SiteTransaction, 'id'>>) => {
+    try {
+      console.log('🔄 現場ベーストランザクション更新:', { id, updates });
+      
+      const cleanUpdates: any = {};
+      Object.keys(updates).forEach(key => {
+        const value = (updates as any)[key];
+        if (value !== undefined) {
+          cleanUpdates[key] = value;
+        }
+      });
+      
+      await updateDoc(doc(db, 'SiteTransactions', id), cleanUpdates);
+      
+      setSiteTransactions(prev => 
+        prev.map(t => t.id === id ? { ...t, ...updates } : t)
+      );
+      
+      console.log('✅ 現場ベーストランザクション更新成功');
+    } catch (error) {
+      console.error('❌ 現場ベーストランザクション更新エラー:', error);
+      throw error;
+    }
+  };
+
+  // 現場ベーストランザクションを削除
+  const deleteSiteTransaction = async (id: string) => {
+    try {
+      console.log('🗑️ 現場ベーストランザクション削除:', id);
+      await deleteDoc(doc(db, 'SiteTransactions', id));
+      setSiteTransactions(prev => prev.filter(t => t.id !== id));
+      console.log('✅ 現場ベーストランザクション削除成功');
+    } catch (error) {
+      console.error('❌ 現場ベーストランザクション削除エラー:', error);
+      throw error;
+    }
+  };
+
+  // 現場別トランザクション取得
+  const getSiteTransactionsBySite = (siteId: string): SiteTransaction[] => {
+    return siteTransactions.filter(transaction => transaction.siteId === siteId);
+  };
+
+  // カテゴリー別トランザクション取得
+  const getSiteTransactionsByCategory = (categoryId: string): SiteTransaction[] => {
+    return siteTransactions.filter(transaction => transaction.categoryId === categoryId);
+  };
+
+  // 現場・カテゴリー別トランザクション取得
+  const getSiteTransactionsBySiteAndCategory = (siteId: string, categoryId: string): SiteTransaction[] => {
+    return siteTransactions.filter(transaction => 
+      transaction.siteId === siteId && transaction.categoryId === categoryId
+    );
+  };
+
   useEffect(() => {
     console.log('🚀 TransactionProvider mounted, fetching transactions...');
     console.log('🔧 useEffect実行時のstate:', { transactionsLength: transactions.length, loading });
     console.log('🔧 Firebase db object:', db);
     fetchTransactions();
+    fetchSiteTransactions(); // 現場ベーストランザクションも取得
   }, []);
 
   // トランザクション状態の変更を監視
@@ -244,6 +360,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
   }, [transactions, loading]);
 
   const value: TransactionContextType = {
+    // 既存のトランザクション機能
     transactions,
     addTransaction,
     updateTransaction,
@@ -258,6 +375,16 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     addImagesToTransaction,
     showTransactionDetailsModal,
     setShowTransactionDetailsModal,
+    
+    // 新しい現場ベーストランザクション機能
+    siteTransactions,
+    addSiteTransaction,
+    updateSiteTransaction,
+    deleteSiteTransaction,
+    getSiteTransactionsBySite,
+    getSiteTransactionsByCategory,
+    getSiteTransactionsBySiteAndCategory,
+    siteTransactionLoading,
   };
 
   return (

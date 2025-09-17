@@ -1,10 +1,75 @@
-import React from 'react';
-import { Container, Typography, Box } from '@mui/material';
-import BudgetSettingsForm from '../components/BudgetSettingsForm';
-import BudgetSettingsTable from '../components/BudgetSettingsTable';
-import BudgetBreakdownForm from '../components/BudgetBreakdownForm';
+import React, { useState } from 'react';
+import { 
+  Container, 
+  Typography, 
+  Box, 
+  Grid, 
+  Card, 
+  CardContent, 
+  Chip, 
+  Button,
+  Alert,
+  Divider
+} from '@mui/material';
+import { 
+  Business as BusinessIcon,
+  Category as CategoryIcon,
+  Add as AddIcon,
+  Assessment as AssessmentIcon
+} from '@mui/icons-material';
+import { useSites } from '../contexts/SiteContext';
+import { useCategories } from '../contexts/CategoryContext';
+import { useTransactions } from '../contexts/TransactionContext';
+import SiteManagement from '../components/SiteManagement';
+import CategoryManagement from '../components/CategoryManagement';
 
 const Dashboard: React.FC = () => {
+  const { sites, activeSites, selectedSiteId, setSelectedSiteId } = useSites();
+  const { getTotalBudgetBySite, getCategoriesBySite } = useCategories();
+  const { getSiteTransactionsBySite, siteTransactions } = useTransactions();
+  
+  const [showSiteManagement, setShowSiteManagement] = useState(false);
+  const [showCategoryManagement, setShowCategoryManagement] = useState(false);
+
+  // 選択された現場の情報
+  const selectedSite = selectedSiteId ? sites.find(s => s.id === selectedSiteId) : null;
+  const selectedSiteCategories = selectedSiteId ? getCategoriesBySite(selectedSiteId) : [];
+  const selectedSiteBudget = selectedSiteId ? getTotalBudgetBySite(selectedSiteId) : 0;
+  const selectedSiteTransactions = selectedSiteId ? getSiteTransactionsBySite(selectedSiteId) : [];
+
+  // 全体の統計
+  const totalSites = activeSites.length;
+  const totalBudget = activeSites.reduce((sum, site) => sum + getTotalBudgetBySite(site.id), 0);
+  const totalTransactions = siteTransactions.length;
+
+  if (showSiteManagement) {
+    return (
+      <Container maxWidth="lg" sx={{ py: { xs: 1, sm: 2, md: 3 } }}>
+        <Button 
+          onClick={() => setShowSiteManagement(false)} 
+          sx={{ mb: 2 }}
+        >
+          ← ダッシュボードに戻る
+        </Button>
+        <SiteManagement />
+      </Container>
+    );
+  }
+
+  if (showCategoryManagement) {
+    return (
+      <Container maxWidth="lg" sx={{ py: { xs: 1, sm: 2, md: 3 } }}>
+        <Button 
+          onClick={() => setShowCategoryManagement(false)} 
+          sx={{ mb: 2 }}
+        >
+          ← ダッシュボードに戻る
+        </Button>
+        <CategoryManagement />
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 1, sm: 2, md: 3 } }}>
       <Box sx={{ mb: { xs: 2, sm: 3, md: 4 } }}>
@@ -17,7 +82,7 @@ const Dashboard: React.FC = () => {
             textAlign: { xs: 'center', sm: 'left' }
           }}
         >
-          ダッシュボード
+          現場管理ダッシュボード
         </Typography>
         <Typography 
           variant="h5" 
@@ -27,18 +92,221 @@ const Dashboard: React.FC = () => {
             textAlign: { xs: 'center', sm: 'left' }
           }}
         >
-          予算と貯蓄目標の管理
+          現場とカテゴリーベースの予算管理
         </Typography>
       </Box>
-      
-      {/* 予算・貯蓄目標設定フォーム */}
-      <BudgetSettingsForm />
-      
-      {/* 月間予算の内訳 */}
-      <BudgetBreakdownForm />
 
-      {/* 3年分の設定値一覧 */}
-      <BudgetSettingsTable />
+      {/* 全体統計 */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={4} {...({} as any)}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <BusinessIcon color="primary" />
+                <Typography variant="h6">稼働現場数</Typography>
+              </Box>
+              <Typography variant="h3" color="primary">
+                {totalSites}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={4} {...({} as any)}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <AssessmentIcon color="secondary" />
+                <Typography variant="h6">総予算</Typography>
+              </Box>
+              <Typography variant="h3" color="secondary">
+                ¥{totalBudget.toLocaleString()}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={4} {...({} as any)}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <CategoryIcon color="success" />
+                <Typography variant="h6">総取引数</Typography>
+              </Box>
+              <Typography variant="h3" color="success.main">
+                {totalTransactions}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* クイックアクション */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ mb: 2 }}>
+          クイックアクション
+        </Typography>
+        <Box display="flex" gap={2} flexWrap="wrap">
+          <Button
+            variant="contained"
+            startIcon={<BusinessIcon />}
+            onClick={() => setShowSiteManagement(true)}
+          >
+            現場管理
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<CategoryIcon />}
+            onClick={() => setShowCategoryManagement(true)}
+          >
+            カテゴリー管理
+          </Button>
+        </Box>
+      </Box>
+
+      {/* 現場がない場合の案内 */}
+      {totalSites === 0 && (
+        <Alert severity="info" sx={{ mb: 4 }}>
+          現場が登録されていません。まず「現場管理」から現場を登録してください。
+        </Alert>
+      )}
+
+      {/* 選択された現場の詳細 */}
+      {selectedSite && (
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" sx={{ mb: 2 }}>
+            選択中の現場: {selectedSite.name}
+          </Typography>
+          <Card>
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6} {...({} as any)}>
+                  <Typography variant="h6" color="primary" gutterBottom>
+                    現場情報
+                  </Typography>
+                  {selectedSite.description && (
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {selectedSite.description}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>予算合計:</strong> ¥{selectedSiteBudget.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>カテゴリー数:</strong> {selectedSiteCategories.length}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>取引数:</strong> {selectedSiteTransactions.length}
+                  </Typography>
+                  {selectedSite.comment && (
+                    <>
+                      <Divider sx={{ my: 2 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        💬 {selectedSite.comment}
+                      </Typography>
+                    </>
+                  )}
+                </Grid>
+                <Grid item xs={12} md={6} {...({} as any)}>
+                  <Typography variant="h6" color="primary" gutterBottom>
+                    カテゴリー一覧
+                  </Typography>
+                  {selectedSiteCategories.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      カテゴリーが登録されていません
+                    </Typography>
+                  ) : (
+                    <Box display="flex" flexDirection="column" gap={1}>
+                      {selectedSiteCategories.map((category) => (
+                        <Box key={category.id} display="flex" justifyContent="space-between" alignItems="center">
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {category.name}
+                            </Typography>
+                            {category.description && (
+                              <Typography variant="caption" color="text.secondary">
+                                {category.description}
+                              </Typography>
+                            )}
+                          </Box>
+                          <Chip 
+                            label={`¥${category.budgetAmount.toLocaleString()}`}
+                            size="small"
+                            color={category.isActive ? 'primary' : 'default'}
+                          />
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Box>
+      )}
+
+      {/* 現場一覧 */}
+      {activeSites.length > 0 && (
+        <Box>
+          <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h5">
+              現場一覧
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => setSelectedSiteId(null)}
+              disabled={!selectedSiteId}
+            >
+              選択をクリア
+            </Button>
+          </Box>
+          <Grid container spacing={2}>
+            {activeSites.map((site) => {
+              const budget = getTotalBudgetBySite(site.id);
+              const categories = getCategoriesBySite(site.id);
+              const transactions = getSiteTransactionsBySite(site.id);
+              const isSelected = selectedSiteId === site.id;
+              
+              return (
+                <Grid key={site.id} item xs={12} sm={6} md={4} {...({} as any)}>
+                  <Card 
+                    elevation={isSelected ? 8 : 2}
+                    sx={{ 
+                      cursor: 'pointer',
+                      border: isSelected ? 2 : 0,
+                      borderColor: 'primary.main',
+                      '&:hover': { elevation: 4 }
+                    }}
+                    onClick={() => setSelectedSiteId(site.id)}
+                  >
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom noWrap>
+                        {site.name}
+                      </Typography>
+                      {site.description && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          {site.description}
+                        </Typography>
+                      )}
+                      <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                        <Typography variant="body2">
+                          予算: ¥{budget.toLocaleString()}
+                        </Typography>
+                        <Chip 
+                          label={isSelected ? '選択中' : '選択'} 
+                          color={isSelected ? 'primary' : 'default'}
+                          size="small"
+                        />
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">
+                        カテゴリー: {categories.length} | 取引: {transactions.length}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+        </Box>
+      )}
     </Container>
   );
 };

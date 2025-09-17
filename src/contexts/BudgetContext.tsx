@@ -1,18 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { BudgetSettingsMap, MonthlyBudgetSettings } from '../types';
-import { 
-  testFirebaseConnection,
-  saveBudgetSettingToFirestore,
-  loadAllBudgetSettingsFromFirestore,
-  syncLocalBudgetToFirestore,
-  saveBudgetMapToLocal,
-  getBudgetSyncStatus
-} from '../utils/budgetFirebase';
+import { SiteBudgetSettings, SiteBudgetSettingsMap } from '../types';
+import {
+  testSiteBudgetFirebaseConnection,
+  saveSiteBudgetSettingToFirestore,
+  loadAllSiteBudgetSettingsFromFirestore,
+  loadSiteBudgetSettingsBySiteFromFirestore,
+  saveSiteBudgetMapToLocal,
+  loadSiteBudgetMapFromLocal,
+  getSiteBudgetSyncStatus,
+  getSiteYearMonthKey
+} from '../utils/siteBudgetFirebase';
 
 interface BudgetContextType {
-  budgetSettingsMap: BudgetSettingsMap;
-  getBudgetSettings: (year: number, month: number) => MonthlyBudgetSettings;
-  updateBudgetSettings: (year: number, month: number, settings: MonthlyBudgetSettings) => Promise<void>;
+  // 現場ベース予算機能のみ
+  siteBudgetSettingsMap: SiteBudgetSettingsMap;
+  getSiteBudgetSettings: (year: number, month: number, siteId: string) => SiteBudgetSettings | null;
+  updateSiteBudgetSettings: (year: number, month: number, siteId: string, settings: SiteBudgetSettings) => Promise<void>;
+  hasSiteBudgetSettings: (year: number, month: number, siteId: string) => boolean;
+  getSiteBudgetSettingsBySite: (siteId: string) => SiteBudgetSettingsMap;
   loading: boolean;
   syncStatus: string;
   forceSyncFromFirebase: () => Promise<void>;
@@ -24,160 +29,143 @@ interface BudgetProviderProps {
   children: ReactNode;
 }
 
-const BUDGET_SETTINGS_MAP_KEY = 'budget_settings_map';
-const LEGACY_BUDGET_SETTINGS_KEY = 'budget_settings';
-
-// 年月をキー文字列に変換 (例: 2024, 1 -> "2024-01")
-const getYearMonthKey = (year: number, month: number): string => {
-  return `${year}-${String(month).padStart(2, '0')}`;
-};
-
-// デフォルトの予算設定
-const getDefaultBudgetSettings = (): MonthlyBudgetSettings => ({
-  monthlyBudget: 200000,
-  savingsGoal: 100000,
-  breakdown: [],
-});
+// 現場ベース予算管理のみのコンテキスト
 
 export const BudgetProvider: React.FC<BudgetProviderProps> = ({ children }) => {
-  const [budgetSettingsMap, setBudgetSettingsMap] = useState<BudgetSettingsMap>({});
+  // 現場ベース予算状態のみ
+  const [siteBudgetSettingsMap, setSiteBudgetSettingsMap] = useState<SiteBudgetSettingsMap>({});
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<string>('初期化中...');
   const [isFirebaseReady, setIsFirebaseReady] = useState<boolean>(false);
 
-  // 初期読み込み: Firebase同期対応
+  // 現場ベース予算の初期読み込み
   useEffect(() => {
-    const initializeBudgetSettings = async () => {
+    const initializeSiteBudgetSettings = async () => {
       try {
         setSyncStatus('Firebase接続テスト中...');
         
         // Firebase接続テスト
-        const firebaseReady = await testFirebaseConnection();
+        const firebaseReady = await testSiteBudgetFirebaseConnection();
         setIsFirebaseReady(firebaseReady);
         
         if (firebaseReady) {
-          setSyncStatus('Firebase同期中...');
-          console.log('🔄 Firebase同期モード: デバイス間予算設定同期開始');
+          setSyncStatus('現場予算Firebase同期中...');
+          console.log('🔄 現場予算Firebase同期モード開始');
           
           // Firebaseから最新データを取得
-          const firebaseMap = await loadAllBudgetSettingsFromFirestore();
+          const firebaseMap = await loadAllSiteBudgetSettingsFromFirestore();
           
           // ローカルデータも読み込み
-          const storedMap = localStorage.getItem(BUDGET_SETTINGS_MAP_KEY);
-          let localMap: BudgetSettingsMap = {};
-          
-          if (storedMap) {
-            localMap = JSON.parse(storedMap);
-            console.log('📱 ローカル予算データ:', localMap);
-          }
+          const localMap = loadSiteBudgetMapFromLocal();
           
           // Firebase優先でマージ
           const mergedMap = { ...localMap, ...firebaseMap };
           
-          console.log('☁️ Firebase予算データ:', firebaseMap);
-          console.log('🔄 マージ後予算データ:', mergedMap);
+          console.log('☁️ Firebase現場予算データ:', firebaseMap);
+          console.log('🔄 マージ後現場予算データ:', mergedMap);
           
-          setBudgetSettingsMap(mergedMap);
-          saveBudgetMapToLocal(mergedMap);
+          setSiteBudgetSettingsMap(mergedMap);
+          saveSiteBudgetMapToLocal(mergedMap);
           
-          // ローカルにFirebaseにない新しいデータがあればアップロード
-          const newLocalKeys = Object.keys(localMap).filter(key => !firebaseMap[key]);
-          if (newLocalKeys.length > 0) {
-            console.log('📤 ローカル→Firebaseアップロード:', newLocalKeys);
-            const uploadMap: BudgetSettingsMap = {};
-            newLocalKeys.forEach(key => {
-              uploadMap[key] = localMap[key];
-            });
-            await syncLocalBudgetToFirestore(uploadMap);
-          }
-          
-          setSyncStatus(getBudgetSyncStatus());
+          setSyncStatus(getSiteBudgetSyncStatus());
         } else {
           setSyncStatus('オフライン（ローカル保存）');
-          console.log('📱 ローカルモード: Firebase未接続');
+          console.log('📱 現場予算ローカルモード: Firebase未接続');
           
           // ローカルストレージからのみ読み込み
-          const storedMap = localStorage.getItem(BUDGET_SETTINGS_MAP_KEY);
-          if (storedMap) {
-            const parsedMap = JSON.parse(storedMap);
-            setBudgetSettingsMap(parsedMap);
-          }
+          const localMap = loadSiteBudgetMapFromLocal();
+          setSiteBudgetSettingsMap(localMap);
         }
         
       } catch (error) {
-        console.error('予算設定の初期化に失敗しました:', error);
+        console.error('現場予算設定の初期化に失敗しました:', error);
         setSyncStatus('初期化エラー');
       } finally {
         setLoading(false);
       }
     };
 
-    initializeBudgetSettings();
+    initializeSiteBudgetSettings();
   }, []);
 
-  // 指定年月の予算設定を取得（設定がない場合はデフォルト値）
-  const getBudgetSettings = (year: number, month: number): MonthlyBudgetSettings => {
-    const key = getYearMonthKey(year, month);
-    const found = budgetSettingsMap[key];
-    if (!found) return getDefaultBudgetSettings();
-    return {
-      monthlyBudget: found.monthlyBudget,
-      savingsGoal: found.savingsGoal,
-      breakdown: found.breakdown || [],
-    };
+  // 現場ベース予算の管理関数
+  
+  // 現場別予算設定を取得
+  const getSiteBudgetSettings = (year: number, month: number, siteId: string): SiteBudgetSettings | null => {
+    const key = getSiteYearMonthKey(year, month, siteId);
+    return siteBudgetSettingsMap[key] || null;
   };
 
-  // 指定年月の予算設定を更新（Firebase同期対応）
-  const updateBudgetSettings = async (year: number, month: number, settings: MonthlyBudgetSettings) => {
-    const key = getYearMonthKey(year, month);
+  // 現場別予算設定が存在するかチェック
+  const hasSiteBudgetSettings = (year: number, month: number, siteId: string): boolean => {
+    const key = getSiteYearMonthKey(year, month, siteId);
+    return key in siteBudgetSettingsMap;
+  };
+
+  // 現場別予算設定を更新
+  const updateSiteBudgetSettings = async (year: number, month: number, siteId: string, settings: SiteBudgetSettings) => {
+    const key = getSiteYearMonthKey(year, month, siteId);
     const newMap = {
-      ...budgetSettingsMap,
+      ...siteBudgetSettingsMap,
       [key]: settings,
     };
     
-    console.log(`🔄 予算設定更新: ${year}年${month}月`, settings);
+    console.log(`🔄 現場予算設定更新: ${year}年${month}月 現場${siteId}`, settings);
     
     // ローカル更新
-    setBudgetSettingsMap(newMap);
-    saveBudgetMapToLocal(newMap);
+    setSiteBudgetSettingsMap(newMap);
+    saveSiteBudgetMapToLocal(newMap);
     
     // Firebase同期
     if (isFirebaseReady) {
       try {
-        await saveBudgetSettingToFirestore(year, month, settings);
-        console.log('☁️ Firebase同期成功');
+        await saveSiteBudgetSettingToFirestore(year, month, siteId, settings);
+        console.log('☁️ 現場予算Firebase同期成功');
       } catch (error) {
-        console.error('❌ Firebase同期失敗:', error);
+        console.error('❌ 現場予算Firebase同期失敗:', error);
       }
     } else {
-      console.log('📱 オフライン: ローカル保存のみ');
+      console.log('📱 オフライン: 現場予算ローカル保存のみ');
     }
   };
-  
+
+  // 特定現場のすべての予算設定を取得
+  const getSiteBudgetSettingsBySite = (siteId: string): SiteBudgetSettingsMap => {
+    const result: SiteBudgetSettingsMap = {};
+    Object.keys(siteBudgetSettingsMap).forEach(key => {
+      if (siteBudgetSettingsMap[key].siteId === siteId) {
+        result[key] = siteBudgetSettingsMap[key];
+      }
+    });
+    return result;
+  };
+
   // 強制Firebase同期
   const forceSyncFromFirebase = async () => {
     if (!isFirebaseReady) {
-      console.log('Firebase未接続: 同期不可');
+      console.log('現場予算Firebase未接続: 同期不可');
       return;
     }
     
     try {
-      setSyncStatus('強制同期中...');
-      const firebaseMap = await loadAllBudgetSettingsFromFirestore();
-      setBudgetSettingsMap(firebaseMap);
-      saveBudgetMapToLocal(firebaseMap);
-      setSyncStatus(getBudgetSyncStatus());
-      console.log('✅ 強制同期完了');
+      setSyncStatus('現場予算強制同期中...');
+      const firebaseMap = await loadAllSiteBudgetSettingsFromFirestore();
+      setSiteBudgetSettingsMap(firebaseMap);
+      saveSiteBudgetMapToLocal(firebaseMap);
+      setSyncStatus(getSiteBudgetSyncStatus());
+      console.log('✅ 現場予算強制同期完了');
     } catch (error) {
-      console.error('❌ 強制同期失敗:', error);
+      console.error('❌ 現場予算強制同期失敗:', error);
       setSyncStatus('同期エラー');
     }
   };
 
   const value: BudgetContextType = {
-    budgetSettingsMap,
-    getBudgetSettings,
-    updateBudgetSettings,
+    siteBudgetSettingsMap,
+    getSiteBudgetSettings,
+    updateSiteBudgetSettings,
+    hasSiteBudgetSettings,
+    getSiteBudgetSettingsBySite,
     loading,
     syncStatus,
     forceSyncFromFirebase,
