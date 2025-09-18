@@ -48,22 +48,37 @@ export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) 
   const fetchCategories = async () => {
     try {
       console.log('📂 カテゴリーデータを取得中...');
+      console.log('📂 DB接続状況:', db);
+      console.log('📂 コレクション名: SiteCategories');
       
       const q = query(
         collection(db, 'SiteCategories'),
         orderBy('createdAt', 'desc')
       );
       
+      console.log('📂 クエリ実行中...');
       const querySnapshot = await getDocs(q);
-      const categoriesData = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as SiteCategory[];
+      console.log('📂 クエリ結果:', {
+        empty: querySnapshot.empty,
+        size: querySnapshot.size,
+        docs: querySnapshot.docs.length
+      });
+      
+      const categoriesData = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        console.log('📂 カテゴリードキュメント:', { id: doc.id, data });
+        return {
+          id: doc.id,
+          ...data,
+        };
+      }) as SiteCategory[];
       
       console.log('📂 取得したカテゴリーデータ:', categoriesData);
+      console.log('📂 カテゴリー数:', categoriesData.length);
       setCategories(categoriesData);
     } catch (error) {
       console.error('❌ カテゴリーデータの取得に失敗:', error);
+      console.error('❌ エラー詳細:', error);
     } finally {
       setLoading(false);
     }
@@ -76,9 +91,16 @@ export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) 
 
   // 指定された現場のアクティブなカテゴリーを取得
   const getActiveCategoriesBySite = (siteId: string): SiteCategory[] => {
-    return categories.filter(category => 
+    const result = categories.filter(category => 
       category.siteId === siteId && category.isActive
     );
+    console.log('🔍 getActiveCategoriesBySite:', {
+      siteId,
+      totalCategories: categories.length,
+      matchingCategories: result.length,
+      result
+    });
+    return result;
   };
 
   // カテゴリーを追加

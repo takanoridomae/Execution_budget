@@ -86,7 +86,7 @@ export default function AppLayout() {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div">
-            生活管理確認システム
+            実行予算管理システム
           </Typography>
         </Toolbar>
       </AppBar>

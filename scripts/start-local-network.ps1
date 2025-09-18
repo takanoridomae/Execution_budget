@@ -5,7 +5,7 @@ param(
     [string]$Port = "3000"
 )
 
-Write-Host "🏠 生活管理確認システム - ローカルネットワーク配布モード" -ForegroundColor Green
+Write-Host "🏠 実行予算管理システム - ローカルネットワーク配布モード" -ForegroundColor Green
 
 # 現在のIPアドレスを取得
 $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.InterfaceAlias -notlike "*Virtual*" }).IPAddress | Select-Object -First 1

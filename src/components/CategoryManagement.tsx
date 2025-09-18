@@ -22,6 +22,7 @@ import {
   Alert,
   Divider
 } from '@mui/material';
+import NumericInput from './common/NumericInput';
 import {
   Add as AddIcon,
   Edit as EditIcon,
@@ -31,14 +32,21 @@ import {
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
+import { useTransactions } from '../contexts/TransactionContext';
 import { SiteCategory } from '../types';
+import { 
+  calculateCurrentMonthCategoryExpenses, 
+  calculateCategoryBudgetRemaining,
+  calculateCurrentMonthSiteExpenseTotal,
+  calculateSiteBudgetRemaining
+} from '../utils/transactionCalculations';
 
 interface CategoryFormData {
   siteId: string;
   name: string;
   description: string;
   comment: string;
-  budgetAmount: number;
+  budgetAmount: string;
   isActive: boolean;
 }
 
@@ -54,6 +62,7 @@ const CategoryManagement: React.FC = () => {
     getTotalBudgetBySite,
     loading 
   } = useCategories();
+  const { siteExpenses, incomeExpenseLoading } = useTransactions();
 
   // フォーム状態
   const [openDialog, setOpenDialog] = useState(false);
@@ -63,7 +72,7 @@ const CategoryManagement: React.FC = () => {
     name: '',
     description: '',
     comment: '',
-    budgetAmount: 0,
+    budgetAmount: '',
     isActive: true
   });
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -81,7 +90,7 @@ const CategoryManagement: React.FC = () => {
       name: '',
       description: '',
       comment: '',
-      budgetAmount: 0,
+      budgetAmount: '',
       isActive: true
     });
     setFormErrors({});
@@ -97,7 +106,7 @@ const CategoryManagement: React.FC = () => {
         name: category.name,
         description: category.description || '',
         comment: category.comment || '',
-        budgetAmount: category.budgetAmount,
+        budgetAmount: category.budgetAmount.toString(),
         isActive: category.isActive
       });
     } else {
@@ -130,8 +139,9 @@ const CategoryManagement: React.FC = () => {
     if (!formData.name.trim()) {
       errors.name = 'カテゴリー名は必須です';
     }
-    if (formData.budgetAmount < 0) {
-      errors.budgetAmount = '予算額は0以上である必要があります';
+    const budgetAmount = Number(formData.budgetAmount);
+    if (isNaN(budgetAmount) || budgetAmount < 0) {
+      errors.budgetAmount = '予算額は0以上の数値である必要があります';
     }
 
     setFormErrors(errors);
@@ -150,7 +160,7 @@ const CategoryManagement: React.FC = () => {
           name: formData.name.trim(),
           description: formData.description.trim() || undefined,
           comment: formData.comment.trim() || undefined,
-          budgetAmount: formData.budgetAmount,
+          budgetAmount: Number(formData.budgetAmount),
           isActive: formData.isActive
         });
       } else {
@@ -160,7 +170,7 @@ const CategoryManagement: React.FC = () => {
           name: formData.name.trim(),
           description: formData.description.trim() || undefined,
           comment: formData.comment.trim() || undefined,
-          budgetAmount: formData.budgetAmount,
+          budgetAmount: Number(formData.budgetAmount),
           isActive: formData.isActive
         });
       }
@@ -187,7 +197,28 @@ const CategoryManagement: React.FC = () => {
     return site ? site.name : '不明な現場';
   };
 
-  if (loading) {
+  // カテゴリーの支出実績と予算残額を計算
+  const getCategoryFinancials = (category: SiteCategory) => {
+    const actualExpenses = calculateCurrentMonthCategoryExpenses(
+      siteExpenses,
+      category.id,
+      category.siteId
+    );
+    const budgetRemaining = calculateCategoryBudgetRemaining(
+      category.budgetAmount,
+      actualExpenses
+    );
+    
+    return {
+      actualExpenses,
+      budgetRemaining,
+      budgetUsagePercent: category.budgetAmount > 0 
+        ? Math.round((actualExpenses / category.budgetAmount) * 100)
+        : 0
+    };
+  };
+
+  if (loading || incomeExpenseLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <Typography>カテゴリーデータを読み込み中...</Typography>
@@ -260,6 +291,10 @@ const CategoryManagement: React.FC = () => {
               
               if (siteCategories.length === 0) return null;
 
+              const siteExpenseTotal = calculateCurrentMonthSiteExpenseTotal(siteExpenses, site.id);
+              const siteBudgetRemaining = calculateSiteBudgetRemaining(totalBudget, siteExpenseTotal);
+              const isSiteOverBudget = siteBudgetRemaining < 0;
+              
               return (
                 <Box key={site.id} mb={4}>
                   <Box display="flex" alignItems="center" gap={2} mb={2}>
@@ -270,61 +305,115 @@ const CategoryManagement: React.FC = () => {
                       color="primary"
                       variant="outlined"
                     />
+                    <Chip 
+                      label={`実績合計: ¥${siteExpenseTotal.toLocaleString()}`}
+                      color="secondary"
+                      variant="outlined"
+                    />
+                    <Chip 
+                      label={`予算残: ¥${siteBudgetRemaining.toLocaleString()}${isSiteOverBudget ? ' (予算超過)' : ''}`}
+                      color={isSiteOverBudget ? "error" : "success"}
+                      variant="outlined"
+                    />
                   </Box>
                   
                   <Grid container spacing={2}>
-                    {siteCategories.map((category) => (
-                      <Grid key={category.id} item xs={12} sm={6} md={4} {...({} as any)}>
-                        <Card elevation={2}>
-                          <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-                              <Typography variant="h6" component="h3" noWrap>
-                                {category.name}
-                              </Typography>
-                              <Box display="flex" gap={0.5}>
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleOpenDialog(category)}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                                <IconButton 
-                                  size="small" 
-                                  color="error"
-                                  onClick={() => handleDeleteCategory(category.id)}
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
+                    {siteCategories.map((category) => {
+                      const financials = getCategoryFinancials(category);
+                      const isOverBudget = financials.budgetRemaining < 0;
+                      
+                      return (
+                        <Grid key={category.id} item xs={12} sm={6} md={4} {...({} as any)}>
+                          <Card elevation={2}>
+                            <CardContent>
+                              <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                                <Typography variant="h6" component="h3" noWrap>
+                                  {category.name}
+                                </Typography>
+                                <Box display="flex" gap={0.5}>
+                                  <IconButton 
+                                    size="small" 
+                                    onClick={() => handleOpenDialog(category)}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton 
+                                    size="small" 
+                                    color="error"
+                                    onClick={() => handleDeleteCategory(category.id)}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Box>
                               </Box>
-                            </Box>
 
-                            <Box mb={1}>
-                              <Chip 
-                                label={category.isActive ? '有効' : '無効'}
-                                color={category.isActive ? 'success' : 'default'}
-                                size="small"
-                              />
-                            </Box>
+                              <Box mb={1}>
+                                <Chip 
+                                  label={category.isActive ? '有効' : '無効'}
+                                  color={category.isActive ? 'success' : 'default'}
+                                  size="small"
+                                />
+                              </Box>
 
-                            {category.description && (
+                              {category.description && (
+                                <Typography variant="body2" color="text.secondary" mb={1}>
+                                  {category.description}
+                                </Typography>
+                              )}
+
+                              <Typography variant="body2" color="primary" fontWeight="bold" mb={1}>
+                                予算: ¥{category.budgetAmount.toLocaleString()}
+                              </Typography>
+
                               <Typography variant="body2" color="text.secondary" mb={1}>
-                                {category.description}
+                                支出実績: ¥{financials.actualExpenses.toLocaleString()}
                               </Typography>
-                            )}
 
-                            <Typography variant="body2" color="primary" fontWeight="bold">
-                              予算: ¥{category.budgetAmount.toLocaleString()}
-                            </Typography>
-
-                            {category.comment && (
-                              <Typography variant="body2" color="text.secondary" mt={1}>
-                                💬 {category.comment}
+                              <Typography 
+                                variant="body2" 
+                                color={isOverBudget ? 'error' : 'success'}
+                                fontWeight="bold"
+                                mb={1}
+                              >
+                                予算残: ¥{financials.budgetRemaining.toLocaleString()}
+                                {isOverBudget && ' (予算超過)'}
                               </Typography>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    ))}
+
+                              <Box mb={1}>
+                                <Typography variant="caption" color="text.secondary">
+                                  予算使用率: {financials.budgetUsagePercent}%
+                                </Typography>
+                                <Box 
+                                  sx={{ 
+                                    width: '100%', 
+                                    height: 6, 
+                                    backgroundColor: 'grey.300',
+                                    borderRadius: 1,
+                                    mt: 0.5
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: `${Math.min(financials.budgetUsagePercent, 100)}%`,
+                                      height: '100%',
+                                      backgroundColor: isOverBudget ? 'error.main' : 
+                                        financials.budgetUsagePercent > 80 ? 'warning.main' : 'success.main',
+                                      borderRadius: 1,
+                                    }}
+                                  />
+                                </Box>
+                              </Box>
+
+                              {category.comment && (
+                                <Typography variant="body2" color="text.secondary" mt={1}>
+                                  💬 {category.comment}
+                                </Typography>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </Grid>
+                      );
+                    })}
                   </Grid>
                   
                   <Divider sx={{ mt: 3 }} />
@@ -389,18 +478,14 @@ const CategoryManagement: React.FC = () => {
               fullWidth
             />
 
-            <TextField
+            <NumericInput
               label="予算額"
-              type="number"
               value={formData.budgetAmount}
-              onChange={(e) => handleInputChange('budgetAmount', Number(e.target.value))}
+              onChange={(value) => handleInputChange('budgetAmount', value)}
               error={!!formErrors.budgetAmount}
               helperText={formErrors.budgetAmount}
               required
               fullWidth
-              InputProps={{
-                startAdornment: '¥'
-              }}
             />
 
             <TextField

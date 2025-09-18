@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 生活管理確認システム（ローカルネットワーク配布用）
+  # 実行予算管理システム（ローカルネットワーク配布用）
   household-budget-app:
     build: .
     ports:

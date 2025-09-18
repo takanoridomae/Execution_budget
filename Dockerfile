@@ -1,4 +1,4 @@
-# 生活管理確認システム - ローカルネットワーク配布用Dockerfile
+# 実行予算管理システム - ローカルネットワーク配布用Dockerfile
 FROM node:18-alpine as builder
 
 WORKDIR /app

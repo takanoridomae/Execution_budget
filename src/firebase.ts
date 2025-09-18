@@ -34,7 +34,7 @@ if (process.env.NODE_ENV === 'development') {
   const isLocalNetwork = process.env.REACT_APP_LOCAL_NETWORK === 'true';
   
   if (isLocalNetwork) {
-    console.log('🏠 生活管理確認システム - ローカルネットワークモード');
+    console.log('🏠 実行予算管理システム - ローカルネットワークモード');
   } else {
     console.log('🔧 Firebase初期化完了:', {
       projectId: firebaseConfig.projectId,

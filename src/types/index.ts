@@ -90,3 +90,29 @@ export interface SiteTransaction {
     imageUrls?: string[];
     imageIds?: string[];
 }
+
+// 現場別収入トランザクション（収入専用）
+export interface SiteIncome {
+    id: string;
+    amount: number;
+    content: string;
+    date: string;
+    type: 'income'; // 固定値
+    siteId: string;
+    category: '売上'; // 固定値
+    imageUrls?: string[];
+    imageIds?: string[];
+}
+
+// 現場別支出トランザクション（支出専用）
+export interface SiteExpense {
+    id: string;
+    amount: number;
+    content: string;
+    date: string;
+    type: 'expense'; // 固定値
+    siteId: string;
+    categoryId: string; // カテゴリーIDを参照
+    imageUrls?: string[];
+    imageIds?: string[];
+}

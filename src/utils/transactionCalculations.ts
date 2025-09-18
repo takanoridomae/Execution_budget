@@ -178,3 +178,113 @@ export const calculatePeriodDailyData = (
   return Object.fromEntries(dailyData);
 };
 
+/**
+ * 現場別カテゴリーの支出実績を計算
+ */
+export const calculateCategoryExpensesBySite = (
+  siteExpenses: import('../types').SiteExpense[], 
+  categoryId: string,
+  siteId?: string
+) => {
+  let filteredExpenses = siteExpenses.filter(expense => expense.categoryId === categoryId);
+  
+  if (siteId) {
+    filteredExpenses = filteredExpenses.filter(expense => expense.siteId === siteId);
+  }
+  
+  return filteredExpenses.reduce((total, expense) => total + expense.amount, 0);
+};
+
+/**
+ * カテゴリー別の支出実績を計算（現在月）
+ */
+export const calculateCurrentMonthCategoryExpenses = (
+  siteExpenses: import('../types').SiteExpense[], 
+  categoryId: string,
+  siteId?: string
+) => {
+  if (!siteExpenses || siteExpenses.length === 0) {
+    return 0;
+  }
+  
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
+  const currentYearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+  
+  let filteredExpenses = siteExpenses.filter(expense => {
+    if (!expense.categoryId || !expense.date) {
+      return false;
+    }
+    
+    const expenseDate = new Date(expense.date);
+    // 無効な日付をチェック
+    if (isNaN(expenseDate.getTime())) {
+      return false;
+    }
+    
+    const expenseYearMonth = `${expenseDate.getFullYear()}-${String(expenseDate.getMonth() + 1).padStart(2, '0')}`;
+    return expense.categoryId === categoryId && expenseYearMonth === currentYearMonth;
+  });
+  
+  if (siteId) {
+    filteredExpenses = filteredExpenses.filter(expense => expense.siteId === siteId);
+  }
+  
+  return filteredExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+};
+
+/**
+ * カテゴリーの予算残額を計算
+ */
+export const calculateCategoryBudgetRemaining = (
+  budgetAmount: number,
+  actualExpenses: number
+) => {
+  return budgetAmount - actualExpenses;
+};
+
+/**
+ * 現場の実績合計を計算（現在月）
+ */
+export const calculateCurrentMonthSiteExpenseTotal = (
+  siteExpenses: import('../types').SiteExpense[],
+  siteId: string
+) => {
+  if (!siteExpenses || siteExpenses.length === 0) {
+    return 0;
+  }
+  
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
+  const currentYearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+  
+  const filteredExpenses = siteExpenses.filter(expense => {
+    if (!expense.siteId || !expense.date) {
+      return false;
+    }
+    
+    const expenseDate = new Date(expense.date);
+    // 無効な日付をチェック
+    if (isNaN(expenseDate.getTime())) {
+      return false;
+    }
+    
+    const expenseYearMonth = `${expenseDate.getFullYear()}-${String(expenseDate.getMonth() + 1).padStart(2, '0')}`;
+    return expense.siteId === siteId && expenseYearMonth === currentYearMonth;
+  });
+  
+  return filteredExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+};
+
+/**
+ * 現場の予算残合計を計算（現在月）
+ */
+export const calculateSiteBudgetRemaining = (
+  totalBudget: number,
+  totalExpenses: number
+) => {
+  return totalBudget - totalExpenses;
+};
+

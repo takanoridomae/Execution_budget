@@ -24,7 +24,9 @@ import {
   ExpandMore
 } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
-import { Transaction } from '../types';
+import { useSites } from '../contexts/SiteContext';
+import { useCategories } from '../contexts/CategoryContext';
+import { Transaction, SiteIncome, SiteExpense } from '../types';
 import { useTransactionEdit } from '../hooks/useTransactionEdit';
 import { useTransactionData } from '../hooks/useTransactionData';
 import TransactionEditForm from './common/TransactionEditForm';
@@ -33,6 +35,8 @@ import { getImageFromLocalStorage } from '../utils/imageUtils';
 
 const TransactionDetails: React.FC = () => {
   const { selectedDate } = useTransactions();
+  const { sites } = useSites();
+  const { categories } = useCategories();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const {
@@ -48,11 +52,99 @@ const TransactionDetails: React.FC = () => {
     removeNewImage,
     removeExistingImage
   } = useTransactionEdit();
-  const { getDayTransactions, incomeTransactions, expenseTransactions } = useTransactionData();
+  const { getDayTransactions, incomeTransactions, expenseTransactions, dayIncomes, dayExpenses } = useTransactionData();
 
+  // 現場別収入データの表示
+  const renderSiteIncomeItem = (income: SiteIncome) => {
+    const site = sites.find(s => s.id === income.siteId);
+    const siteName = site?.name || '不明な現場';
+    
+    return (
+      <ListItem 
+        key={income.id}
+        sx={{ 
+          border: '1px solid #ddd', 
+          borderRadius: 1, 
+          mb: 1,
+          backgroundColor: 'transparent'
+        }}
+      >
+        <Box sx={{ width: '100%' }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Box flex={1}>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Typography variant="h6">
+                  ¥{income.amount.toLocaleString()}
+                </Typography>
+                <Chip 
+                  label={income.category} 
+                  size="small" 
+                  sx={{
+                    backgroundColor: '#bbdefb',
+                    color: '#1976d2',
+                    fontWeight: 'bold'
+                  }}
+                />
+              </Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
+                {income.content || '詳細なし'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                現場: {siteName}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      </ListItem>
+    );
+  };
 
-
-
+  // 現場別支出データの表示
+  const renderSiteExpenseItem = (expense: SiteExpense) => {
+    const site = sites.find(s => s.id === expense.siteId);
+    const siteName = site?.name || '不明な現場';
+    const category = categories.find(c => c.id === expense.categoryId);
+    const categoryName = category?.name || '不明なカテゴリー';
+    
+    return (
+      <ListItem 
+        key={expense.id}
+        sx={{ 
+          border: '1px solid #ddd', 
+          borderRadius: 1, 
+          mb: 1,
+          backgroundColor: 'transparent'
+        }}
+      >
+        <Box sx={{ width: '100%' }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Box flex={1}>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Typography variant="h6">
+                  ¥{expense.amount.toLocaleString()}
+                </Typography>
+                <Chip 
+                  label={categoryName} 
+                  size="small" 
+                  sx={{
+                    backgroundColor: '#ffcdd2',
+                    color: '#d32f2f',
+                    fontWeight: 'bold'
+                  }}
+                />
+              </Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
+                {expense.content || '詳細なし'}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                現場: {siteName}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      </ListItem>
+    );
+  };
 
   // 取引項目の表示
   const renderTransactionItem = (transaction: Transaction) => (
@@ -198,13 +290,49 @@ const TransactionDetails: React.FC = () => {
         </Alert>
       )}
 
-      {getDayTransactions.length === 0 ? (
+      {getDayTransactions.length === 0 && dayIncomes.length === 0 && dayExpenses.length === 0 ? (
         <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
           この日の取引記録はありません
         </Typography>
       ) : (
         <Box>
-          {/* 収入セクション */}
+          {/* 現場別収入セクション */}
+          {dayIncomes.length > 0 && (
+            <Accordion 
+              defaultExpanded
+              sx={{ 
+                backgroundColor: '#e3f2fd',
+                '&:before': {
+                  display: 'none',
+                },
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                borderRadius: '8px !important',
+                mb: 1
+              }}
+            >
+              <AccordionSummary 
+                expandIcon={<ExpandMore />}
+                sx={{ backgroundColor: '#bbdefb', borderRadius: '8px 8px 0 0' }}
+              >
+                <Box display="flex" alignItems="center" gap={1}>
+                  <TrendingUp sx={{ color: '#1976d2' }} />
+                  <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+                    収入 ({dayIncomes.length}件)
+                  </Typography>
+                  <Typography variant="body2" sx={{ ml: 1, color: '#1976d2' }}>
+                    ¥{dayIncomes.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
+                  </Typography>
+                </Box>
+              </AccordionSummary>
+              <AccordionDetails>
+                <List sx={{ width: '100%' }}>
+                  {dayIncomes.map(renderSiteIncomeItem)}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+          )}
+
+          {/* 従来の収入セクション（後方互換性） */}
           {incomeTransactions.length > 0 && (
             <Accordion 
               defaultExpanded
@@ -240,12 +368,48 @@ const TransactionDetails: React.FC = () => {
             </Accordion>
           )}
 
-          {/* 支出セクション */}
+          {/* 現場別支出セクション */}
+          {dayExpenses.length > 0 && (
+            <Accordion 
+              defaultExpanded 
+              sx={{ 
+                mt: dayIncomes.length > 0 || incomeTransactions.length > 0 ? 1 : 0,
+                backgroundColor: '#ffebee',
+                '&:before': {
+                  display: 'none',
+                },
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                borderRadius: '8px !important'
+              }}
+            >
+              <AccordionSummary 
+                expandIcon={<ExpandMore />}
+                sx={{ backgroundColor: '#ffcdd2', borderRadius: '8px 8px 0 0' }}
+              >
+                <Box display="flex" alignItems="center" gap={1}>
+                  <TrendingDown sx={{ color: '#d32f2f' }} />
+                  <Typography variant="h6" sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
+                    支出 ({dayExpenses.length}件)
+                  </Typography>
+                  <Typography variant="body2" sx={{ ml: 1, color: '#d32f2f' }}>
+                    ¥{dayExpenses.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
+                  </Typography>
+                </Box>
+              </AccordionSummary>
+              <AccordionDetails>
+                <List sx={{ width: '100%' }}>
+                  {dayExpenses.map(renderSiteExpenseItem)}
+                </List>
+              </AccordionDetails>
+            </Accordion>
+          )}
+
+          {/* 従来の支出セクション（後方互換性） */}
           {expenseTransactions.length > 0 && (
             <Accordion 
               defaultExpanded 
               sx={{ 
-                mt: incomeTransactions.length > 0 ? 1 : 0,
+                mt: incomeTransactions.length > 0 || dayIncomes.length > 0 || dayExpenses.length > 0 ? 1 : 0,
                 backgroundColor: '#ffebee',
                 '&:before': {
                   display: 'none',

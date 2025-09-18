@@ -13,7 +13,6 @@ import {
   Button,
   List,
   ListItem,
-  ListItemText,
   IconButton,
   Chip,
   Alert,
@@ -24,39 +23,47 @@ import {
   TrendingUp, 
   TrendingDown, 
   AccountBalance, 
-  Close, 
-  Edit, 
-  Delete,
+  Close,
   ListAlt
 } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
-import { Transaction } from '../types';
-import { useTransactionEdit } from '../hooks/useTransactionEdit';
+import { useSites } from '../contexts/SiteContext';
+import { useCategories } from '../contexts/CategoryContext';
+import { SiteIncome, SiteExpense } from '../types';
 import { useTransactionData } from '../hooks/useTransactionData';
-import TransactionEditForm from './common/TransactionEditForm';
 import { formatDisplayDate } from '../utils/dateUtils';
 
 const TransactionMenu: React.FC = () => {
-  const { selectedDate, setShowTransactionForm, showTransactionDetailsModal, setShowTransactionDetailsModal } = useTransactions();
+  const { 
+    selectedDate, 
+    setShowTransactionForm, 
+    showTransactionDetailsModal, 
+    setShowTransactionDetailsModal,
+    siteIncomes,
+    siteExpenses 
+  } = useTransactions();
+  const { sites } = useSites();
+  const { categories } = useCategories();
   const [modalType, setModalType] = useState<'income' | 'expense'>('income');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
-  const {
-    editingTransaction,
-    editForm,
-    alert,
-    startEdit,
-    cancelEdit,
-    updateEditForm,
-    handleSave,
-    handleDelete,
-    handleImageFilesChange,
-    removeNewImage,
-    removeExistingImage
-  } = useTransactionEdit();
-  const { dayData, getTransactionsByType } = useTransactionData();
+  const { dayData } = useTransactionData();
   
-
+  // 現場別データから該当日の収入・支出を取得
+  const getSiteTransactionsByType = (type: 'income' | 'expense') => {
+    if (!selectedDate) return [];
+    
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth() + 1;
+    const day = selectedDate.getDate();
+    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    
+    if (type === 'income') {
+      return siteIncomes.filter(income => income.date === dateKey);
+    } else {
+      return siteExpenses.filter(expense => expense.date === dateKey);
+    }
+  };
 
   // モーダルを開く
   const openModal = (type: 'income' | 'expense') => {
@@ -68,7 +75,6 @@ const TransactionMenu: React.FC = () => {
   // モーダルを閉じる
   const closeModal = () => {
     setShowTransactionDetailsModal(false);
-    cancelEdit();
     console.log('TransactionMenu - Modal closed, showTransactionDetailsModal:', false);
   };
 
@@ -242,37 +248,32 @@ const TransactionMenu: React.FC = () => {
         </DialogTitle>
         
         <DialogContent>
-          {alert && (
-            <Alert severity={alert.type} sx={{ mb: 2 }}>
-              {alert.message}
-            </Alert>
-          )}
-
           <List>
-            {getTransactionsByType(modalType).map((transaction) => (
-              <ListItem 
-                key={transaction.id}
-                sx={{ 
-                  border: '1px solid #ddd', 
-                  borderRadius: 1, 
-                  mb: 1,
-                  backgroundColor: editingTransaction?.id === transaction.id ? '#f5f5f5' : 'transparent'
-                }}
-              >
-                {editingTransaction?.id === transaction.id ? (
-                  // 編集モード
-                  <TransactionEditForm
-                    transaction={transaction}
-                    editForm={editForm}
-                    onUpdateForm={updateEditForm}
-                    onSave={handleSave}
-                    onCancel={cancelEdit}
-                    onImageFilesChange={handleImageFilesChange}
-                    onRemoveNewImage={removeNewImage}
-                    onRemoveExistingImage={removeExistingImage}
-                  />
-                ) : (
-                  // 表示モード
+            {getSiteTransactionsByType(modalType).map((transaction) => {
+              // 現場名を取得
+              const site = sites.find(s => s.id === transaction.siteId);
+              const siteName = site?.name || '不明な現場';
+              
+              // カテゴリー名を取得
+              let categoryName = '';
+              if (modalType === 'income') {
+                categoryName = (transaction as SiteIncome).category; // '売上'
+              } else {
+                const category = categories.find(c => c.id === (transaction as SiteExpense).categoryId);
+                categoryName = category?.name || '不明なカテゴリー';
+              }
+              
+              return (
+                <ListItem 
+                  key={transaction.id}
+                  sx={{ 
+                    border: '1px solid #ddd', 
+                    borderRadius: 1, 
+                    mb: 1,
+                    backgroundColor: 'transparent'
+                  }}
+                >
+                  {/* 表示モード（編集機能は一時的に無効化） */}
                   <Box sx={{ width: '100%' }}>
                     <Box display="flex" justifyContent="space-between" alignItems="center">
                       <Box flex={1}>
@@ -282,22 +283,29 @@ const TransactionMenu: React.FC = () => {
                             ¥{transaction.amount.toLocaleString()}
                           </Typography>
                           <Chip 
-                            label={transaction.category} 
+                            label={categoryName} 
                             size="small" 
                             color={modalType === 'income' ? 'success' : 'error'}
                           />
                         </Box>
                         
                         {/* セカンダリ情報 */}
-                        <Typography variant="body2" color="textSecondary">
+                        <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
                           {transaction.content || '詳細なし'}
+                        </Typography>
+                        
+                        {/* 現場情報 */}
+                        <Typography variant="caption" color="textSecondary">
+                          現場: {siteName}
                         </Typography>
                       </Box>
                       <Box display="flex" gap={1}>
+                        {/* 編集・削除ボタンは一時的に無効化
                         <IconButton 
                           size="small" 
                           color="primary"
                           onClick={() => startEdit(transaction)}
+                          disabled
                         >
                           <Edit />
                         </IconButton>
@@ -305,17 +313,19 @@ const TransactionMenu: React.FC = () => {
                           size="small" 
                           color="error"
                           onClick={() => handleDelete(transaction.id)}
+                          disabled
                         >
                           <Delete />
                         </IconButton>
+                        */}
                       </Box>
                     </Box>
                   </Box>
-                )}
-              </ListItem>
-            ))}
+                </ListItem>
+              );
+            })}
             
-            {getTransactionsByType(modalType).length === 0 && (
+            {getSiteTransactionsByType(modalType).length === 0 && (
               <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
                 {modalType === 'income' ? '収入' : '支出'}の記録がありません
               </Typography>

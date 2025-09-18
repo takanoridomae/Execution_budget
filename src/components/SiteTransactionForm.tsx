@@ -27,7 +27,7 @@ import { useAlert } from '../hooks/useAlert';
 import NumericInput from './common/NumericInput';
 
 const SiteTransactionForm: React.FC = () => {
-  const { addSiteTransaction, selectedDate } = useTransactions();
+  const { addSiteTransaction, addSiteIncome, addSiteExpense, selectedDate } = useTransactions();
   const { activeSites, selectedSiteId, setSelectedSiteId } = useSites();
   const { getActiveCategoriesBySite } = useCategories();
   const { alert, showSuccess, showError } = useAlert();
@@ -47,6 +47,26 @@ const SiteTransactionForm: React.FC = () => {
 
   // 選択された現場のカテゴリーを取得
   const availableCategories = siteId ? getActiveCategoriesBySite(siteId) : [];
+  
+  // デバッグ情報
+  console.log('🔍 SiteTransactionForm Debug:', {
+    activeSites: activeSites.length,
+    selectedSiteId,
+    siteId,
+    availableCategories: availableCategories.length,
+    categories: availableCategories
+  });
+  
+  // カテゴリーデータの詳細確認
+  if (availableCategories.length > 0) {
+    console.log('🔍 Category Details:', availableCategories.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      budgetAmount: cat.budgetAmount,
+      siteId: cat.siteId,
+      isActive: cat.isActive
+    })));
+  }
 
   // 現場変更時にカテゴリーをリセット
   useEffect(() => {
@@ -78,7 +98,8 @@ const SiteTransactionForm: React.FC = () => {
       errors.siteId = '現場を選択してください';
     }
 
-    if (!categoryId) {
+    // 支出の場合のみカテゴリー必須
+    if (transactionType === 'expense' && !categoryId) {
       errors.categoryId = 'カテゴリーを選択してください';
     }
 
@@ -102,18 +123,31 @@ const SiteTransactionForm: React.FC = () => {
 
     setLoading(true);
     try {
-      const transactionData = {
-        amount: parseFloat(amount),
-        content: description,
-        date: formatDateForStorage(selectedDate),
-        type: transactionType,
-        siteId,
-        categoryId,
-      };
-
-      await addSiteTransaction(transactionData);
+      if (transactionType === 'income') {
+        // 収入の場合：SiteIncomesコレクションに保存、カテゴリーは「売上」固定
+        const incomeData = {
+          amount: parseFloat(amount),
+          content: description,
+          date: formatDateForStorage(selectedDate),
+          siteId,
+        };
+        
+        await addSiteIncome(incomeData);
+        showSuccess('収入を追加しました（カテゴリー: 売上）');
+      } else {
+        // 支出の場合：SiteExpensesコレクションに保存
+        const expenseData = {
+          amount: parseFloat(amount),
+          content: description,
+          date: formatDateForStorage(selectedDate),
+          siteId,
+          categoryId,
+        };
+        
+        await addSiteExpense(expenseData);
+        showSuccess('支出を追加しました');
+      }
       
-      showSuccess('取引を追加しました');
       clearForm();
       
       // 現場選択を同期
@@ -121,7 +155,7 @@ const SiteTransactionForm: React.FC = () => {
         setSelectedSiteId(siteId);
       }
     } catch (error) {
-      console.error('Error adding site transaction:', error);
+      console.error('Error adding transaction:', error);
       showError('取引の追加に失敗しました');
     } finally {
       setLoading(false);
@@ -186,35 +220,96 @@ const SiteTransactionForm: React.FC = () => {
       </FormControl>
 
       {/* カテゴリー選択 */}
-      <FormControl 
-        fullWidth 
-        sx={{ mb: 2 }} 
-        error={!!fieldErrors.categoryId}
-        disabled={!siteId}
-      >
-        <InputLabel>カテゴリー</InputLabel>
-        <Select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          label="カテゴリー"
+      {transactionType === 'income' ? (
+        // 収入時は「売上」固定表示
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel shrink>カテゴリー</InputLabel>
+          <TextField
+            value="売上"
+            label="カテゴリー"
+            disabled
+            fullWidth
+            variant="outlined"
+            sx={{ 
+              '& .MuiInputBase-input': { 
+                backgroundColor: '#f5f5f5',
+                color: 'text.primary'
+              } 
+            }}
+            helperText="収入のカテゴリーは自動的に「売上」になります"
+          />
+        </FormControl>
+      ) : (
+        // 支出時は通常のカテゴリー選択
+        <FormControl 
+          fullWidth 
+          sx={{ mb: 2 }} 
+          error={!!fieldErrors.categoryId}
+          disabled={!siteId}
         >
-          {availableCategories.map((category) => (
-            <MenuItem key={category.id} value={category.id}>
-              {category.name} (¥{category.budgetAmount.toLocaleString()})
+          <InputLabel id="category-select-label">カテゴリー</InputLabel>
+          <Select
+            labelId="category-select-label"
+            id="category-select"
+            value={categoryId}
+            onChange={(e) => {
+              console.log('🔍 Category selected:', e.target.value);
+              setCategoryId(e.target.value);
+            }}
+            label="カテゴリー"
+            displayEmpty
+            MenuProps={{
+              disablePortal: false,
+              PaperProps: {
+                style: {
+                  maxHeight: 300,
+                  zIndex: 10000,
+                },
+              },
+              anchorOrigin: {
+                vertical: 'bottom',
+                horizontal: 'left',
+              },
+              transformOrigin: {
+                vertical: 'top',
+                horizontal: 'left',
+              },
+            }}
+          >
+            <MenuItem value="" disabled>
+              <em>カテゴリーを選択してください</em>
             </MenuItem>
-          ))}
-        </Select>
-        {fieldErrors.categoryId && (
-          <Typography variant="caption" color="error">
-            {fieldErrors.categoryId}
-          </Typography>
-        )}
-        {siteId && availableCategories.length === 0 && (
-          <Typography variant="caption" color="warning.main">
-            この現場にはカテゴリーが登録されていません
-          </Typography>
-        )}
-      </FormControl>
+            {availableCategories.length > 0 ? (
+              availableCategories.map((category) => {
+                console.log('🔍 Rendering MenuItem:', {
+                  id: category.id,
+                  name: category.name,
+                  budgetAmount: category.budgetAmount
+                });
+                return (
+                  <MenuItem key={category.id} value={category.id}>
+                    {category.name} (¥{Number(category.budgetAmount || 0).toLocaleString()})
+                  </MenuItem>
+                );
+              })
+            ) : (
+              <MenuItem value="" disabled>
+                カテゴリーが見つかりません
+              </MenuItem>
+            )}
+          </Select>
+          {fieldErrors.categoryId && (
+            <Typography variant="caption" color="error">
+              {fieldErrors.categoryId}
+            </Typography>
+          )}
+          {siteId && availableCategories.length === 0 && (
+            <Typography variant="caption" color="warning.main">
+              この現場にはカテゴリーが登録されていません
+            </Typography>
+          )}
+        </FormControl>
+      )}
 
       {/* 金額 */}
       <NumericInput

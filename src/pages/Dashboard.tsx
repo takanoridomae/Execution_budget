@@ -14,7 +14,6 @@ import {
 import { 
   Business as BusinessIcon,
   Category as CategoryIcon,
-  Add as AddIcon,
   Assessment as AssessmentIcon
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
@@ -26,7 +25,7 @@ import CategoryManagement from '../components/CategoryManagement';
 const Dashboard: React.FC = () => {
   const { sites, activeSites, selectedSiteId, setSelectedSiteId } = useSites();
   const { getTotalBudgetBySite, getCategoriesBySite } = useCategories();
-  const { getSiteTransactionsBySite, siteTransactions } = useTransactions();
+  const { siteExpenses, getSiteIncomesBySite, getSiteExpensesBySite } = useTransactions();
   
   const [showSiteManagement, setShowSiteManagement] = useState(false);
   const [showCategoryManagement, setShowCategoryManagement] = useState(false);
@@ -35,12 +34,16 @@ const Dashboard: React.FC = () => {
   const selectedSite = selectedSiteId ? sites.find(s => s.id === selectedSiteId) : null;
   const selectedSiteCategories = selectedSiteId ? getCategoriesBySite(selectedSiteId) : [];
   const selectedSiteBudget = selectedSiteId ? getTotalBudgetBySite(selectedSiteId) : 0;
-  const selectedSiteTransactions = selectedSiteId ? getSiteTransactionsBySite(selectedSiteId) : [];
+  const selectedSiteIncomeAmount = selectedSiteId ? getSiteIncomesBySite(selectedSiteId).reduce((sum, income) => sum + income.amount, 0) : 0;
+  const selectedSiteExpenseAmount = selectedSiteId ? getSiteExpensesBySite(selectedSiteId).reduce((sum, expense) => sum + expense.amount, 0) : 0;
+  const budgetMinusExpense = selectedSiteBudget - selectedSiteExpenseAmount;
+  const incomeMinusBudget = selectedSiteIncomeAmount - selectedSiteBudget;
 
   // 全体の統計
   const totalSites = activeSites.length;
   const totalBudget = activeSites.reduce((sum, site) => sum + getTotalBudgetBySite(site.id), 0);
-  const totalTransactions = siteTransactions.length;
+  const totalExpenseCount = siteExpenses.length;
+  const totalExpenseAmount = siteExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   if (showSiteManagement) {
     return (
@@ -98,7 +101,7 @@ const Dashboard: React.FC = () => {
 
       {/* 全体統計 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={4} {...({} as any)}>
+        <Grid item xs={12} sm={6} md={3} {...({} as any)}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" gap={1} mb={1}>
@@ -111,7 +114,7 @@ const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4} {...({} as any)}>
+        <Grid item xs={12} sm={6} md={3} {...({} as any)}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" gap={1} mb={1}>
@@ -124,15 +127,28 @@ const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4} {...({} as any)}>
+        <Grid item xs={12} sm={6} md={3} {...({} as any)}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <CategoryIcon color="success" />
-                <Typography variant="h6">総取引数</Typography>
+                <CategoryIcon color="error" />
+                <Typography variant="h6">支出件数</Typography>
               </Box>
-              <Typography variant="h3" color="success.main">
-                {totalTransactions}
+              <Typography variant="h3" color="error.main">
+                {totalExpenseCount}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3} {...({} as any)}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <CategoryIcon color="warning" />
+                <Typography variant="h6">総支出金額</Typography>
+              </Box>
+              <Typography variant="h3" color="warning.main">
+                ¥{totalExpenseAmount.toLocaleString()}
               </Typography>
             </CardContent>
           </Card>
@@ -193,8 +209,24 @@ const Dashboard: React.FC = () => {
                   <Typography variant="body2" sx={{ mb: 1 }}>
                     <strong>カテゴリー数:</strong> {selectedSiteCategories.length}
                   </Typography>
-                  <Typography variant="body2">
-                    <strong>取引数:</strong> {selectedSiteTransactions.length}
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>実績売上:</strong> ¥{selectedSiteIncomeAmount.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    <strong>実績支出:</strong> ¥{selectedSiteExpenseAmount.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    color: budgetMinusExpense >= 0 ? 'success.main' : 'error.main',
+                    fontWeight: 'bold',
+                    mb: 1
+                  }}>
+                    <strong>予算残高:</strong> {budgetMinusExpense >= 0 ? "+" : ""}¥{budgetMinusExpense.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    color: incomeMinusBudget >= 0 ? 'success.main' : 'error.main',
+                    fontWeight: 'bold'
+                  }}>
+                    <strong>売上利益予定:</strong> {incomeMinusBudget >= 0 ? "+" : ""}¥{incomeMinusBudget.toLocaleString()}
                   </Typography>
                   {selectedSite.comment && (
                     <>
@@ -262,7 +294,7 @@ const Dashboard: React.FC = () => {
             {activeSites.map((site) => {
               const budget = getTotalBudgetBySite(site.id);
               const categories = getCategoriesBySite(site.id);
-              const transactions = getSiteTransactionsBySite(site.id);
+              const siteExpenseAmount = getSiteExpensesBySite(site.id).reduce((sum, expense) => sum + expense.amount, 0);
               const isSelected = selectedSiteId === site.id;
               
               return (
@@ -297,7 +329,7 @@ const Dashboard: React.FC = () => {
                         />
                       </Box>
                       <Typography variant="caption" color="text.secondary">
-                        カテゴリー: {categories.length} | 取引: {transactions.length}
+                        カテゴリー: {categories.length} | 支出: ¥{siteExpenseAmount.toLocaleString()}
                       </Typography>
                     </CardContent>
                   </Card>

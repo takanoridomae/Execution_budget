@@ -3,6 +3,7 @@ import { Box, Card, CardHeader, CardContent, Button, FormControl, Select, MenuIt
 import { PieChart, Pie, Cell, Tooltip, Legend as ReLegend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { Photo, Close } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
+import { useCategories } from '../contexts/CategoryContext';
 import { getImageFromLocalStorage } from '../utils/imageUtils';
 import { formatDateKey } from '../utils/dateUtils';
 import { formatCurrency } from '../utils/numberUtils';
@@ -11,7 +12,8 @@ import { useBudget } from '../contexts/BudgetContext';
 type BreakdownType = 'income' | 'expense';
 
 const Report: React.FC = () => {
-  const { transactions, selectedDate } = useTransactions();
+  const { transactions, selectedDate, siteExpenses, siteIncomes } = useTransactions();
+  const { categories } = useCategories();
   // Default to hide income for daily view and expense-based breakdown for pie chart
   const [showIncome, setShowIncome] = useState<boolean>(() => {
     try {
@@ -175,17 +177,29 @@ const Report: React.FC = () => {
 
   const monthStart = formatDateKey(year, month, 1);
   const monthEnd = formatDateKey(year, month, daysInMonth);
-  const monthTransactions = (transactions ?? []).filter((t) => t.date >= monthStart && t.date <= monthEnd);
+  
+  // 新しい現場ベースデータを使用
+  const monthIncomes = (siteIncomes ?? []).filter((t) => t.date >= monthStart && t.date <= monthEnd);
+  const monthExpenses = (siteExpenses ?? []).filter((t) => t.date >= monthStart && t.date <= monthEnd);
+  
+  const incomeTotal = monthIncomes.reduce((s, t) => s + t.amount, 0);
+  const expenseTotal = monthExpenses.reduce((s, t) => s + t.amount, 0);
 
-  const incomeTotal = monthTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expenseTotal = monthTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-
-  const breakdownForMonth = monthTransactions.filter((t) => t.type === breakdownType);
+  // 現場ベースデータでカテゴリー別集計
   const byCategory: Record<string, number> = {};
-  breakdownForMonth.forEach((t) => {
-    const key = t.category as string;
-    byCategory[key] = (byCategory[key] ?? 0) + t.amount;
-  });
+  
+  if (breakdownType === 'income') {
+    monthIncomes.forEach((t) => {
+      const key = t.category; // SiteIncomeは固定で'売上'
+      byCategory[key] = (byCategory[key] ?? 0) + t.amount;
+    });
+  } else {
+    monthExpenses.forEach((t) => {
+      const category = categories.find(c => c.id === t.categoryId);
+      const key = category?.name || '不明なカテゴリー';
+      byCategory[key] = (byCategory[key] ?? 0) + t.amount;
+    });
+  }
   
   // 合計値を計算（パーセンテージ表示用）
   const totalAmount = Object.values(byCategory).reduce((sum, amount) => sum + amount, 0);
@@ -204,9 +218,9 @@ const Report: React.FC = () => {
 
   const dayData = Array.from({ length: daysInMonth }, (_, i) => {
     const d = i + 1;
-    const dayTx = monthTransactions.filter((t) => t.date === formatDateKey(year, month, d));
-    const incomeDay = dayTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const expenseDay = dayTx.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    const dayKey = formatDateKey(year, month, d);
+    const incomeDay = monthIncomes.filter((t) => t.date === dayKey).reduce((s, t) => s + t.amount, 0);
+    const expenseDay = monthExpenses.filter((t) => t.date === dayKey).reduce((s, t) => s + t.amount, 0);
     return { day: d, income: incomeDay, expense: expenseDay };
   });
 
@@ -273,10 +287,10 @@ const Report: React.FC = () => {
   };
   
   const sortedExpenseTx = useMemo(() => {
-    const expenses = (monthTransactions.filter((t) => t.type === 'expense')) ?? [];
+    const expenses = monthExpenses ?? [];
     const sorted = [...expenses].sort((a, b) => a.date.localeCompare(b.date));
     return expenseSortOrder === 'asc' ? sorted : [...sorted].reverse();
-  }, [monthTransactions, expenseSortOrder]);
+  }, [monthExpenses, expenseSortOrder]);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -396,27 +410,32 @@ const Report: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {sortedExpenseTx.map((t) => (
-                    <TableRow key={t.id}>
-                      <TableCell>{t.date}</TableCell>
-                      <TableCell>{t.category as string}</TableCell>
-                      <TableCell sx={{ backgroundColor: t.amount >= 2000 ? '#f44336' : t.amount >= 1000 ? '#FFF176' : 'inherit', color: t.amount >= 2000 ? 'white' : t.amount >= 1000 ? 'black' : 'inherit' }}>{formatCurrency(t.amount)}</TableCell>
-                      <TableCell>{t.content}</TableCell>
-                      <TableCell>
-                        {((t.imageIds && t.imageIds.length > 0) || (t.imageUrls && t.imageUrls.length > 0)) ? (
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleImageClick(t)}
-                          >
-                            <Photo />
-                          </IconButton>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {sortedExpenseTx.map((t) => {
+                    const category = categories.find(c => c.id === t.categoryId);
+                    const categoryName = category?.name || '不明なカテゴリー';
+                    
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell>{t.date}</TableCell>
+                        <TableCell>{categoryName}</TableCell>
+                        <TableCell sx={{ backgroundColor: t.amount >= 2000 ? '#f44336' : t.amount >= 1000 ? '#FFF176' : 'inherit', color: t.amount >= 2000 ? 'white' : t.amount >= 1000 ? 'black' : 'inherit' }}>{formatCurrency(t.amount)}</TableCell>
+                        <TableCell>{t.content}</TableCell>
+                        <TableCell>
+                          {((t.imageIds && t.imageIds.length > 0) || (t.imageUrls && t.imageUrls.length > 0)) ? (
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleImageClick(t)}
+                            >
+                              <Photo />
+                            </IconButton>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -460,21 +479,21 @@ const Report: React.FC = () => {
               // 現場ベース管理に移行したため、予算比較機能は簡素化
               
               // 支出があるすべてのカテゴリーを取得
-              const expenseCategories = Array.from(new Set(
-                monthTransactions
-                  .filter(t => t.type === 'expense')
-                  .map(t => t.category)
+              const expenseCategoryIds = Array.from(new Set(
+                monthExpenses.map(t => t.categoryId)
               ));
               
               // 表示用データを作成（現場ベース管理移行により予算比較は簡素化）
-              const categoryData = expenseCategories.map(category => {
+              const categoryData = expenseCategoryIds.map(categoryId => {
+                const category = categories.find(c => c.id === categoryId);
+                const categoryName = category?.name || '不明なカテゴリー';
                 const budgetAmount = 0; // 現場ベース管理に移行したため一時的に0
-                const categoryExpense = monthTransactions
-                  .filter(t => t.type === 'expense' && t.category === category)
+                const categoryExpense = monthExpenses
+                  .filter(t => t.categoryId === categoryId)
                   .reduce((sum, t) => sum + t.amount, 0);
                 
                 return {
-                  category,
+                  category: categoryName,
                   budgetAmount,
                   categoryExpense
                 };

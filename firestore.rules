@@ -24,8 +24,18 @@ service cloud.firestore {
       allow read, write: if true; // デモアプリのため全許可
     }
     
-    // 現場ベーストランザクションコレクション
+    // 現場ベーストランザクションコレクション（従来互換性のため維持）
     match /SiteTransactions/{transactionId} {
+      allow read, write: if true; // デモアプリのため全許可
+    }
+    
+    // 現場別収入コレクション
+    match /SiteIncomes/{incomeId} {
+      allow read, write: if true; // デモアプリのため全許可
+    }
+    
+    // 現場別支出コレクション
+    match /SiteExpenses/{expenseId} {
       allow read, write: if true; // デモアプリのため全許可
     }
     

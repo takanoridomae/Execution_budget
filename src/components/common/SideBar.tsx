@@ -16,7 +16,6 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   TextField,
-  Grid,
 } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import AssessmentIcon from '@mui/icons-material/Assessment';
@@ -27,6 +26,7 @@ import HelpIcon from '@mui/icons-material/Help';
 import BusinessIcon from '@mui/icons-material/Business';
 import CategoryIcon from '@mui/icons-material/Category';
 import { useTransactions } from '../../contexts/TransactionContext';
+import { useCategories } from '../../contexts/CategoryContext';
 
 interface SideBarProps {
   drawerWidth: number;
@@ -69,16 +69,17 @@ const SideBar: React.FC<SideBarProps> = ({
   });
 
   // 取引データから支出TOP10を計算
-  const { transactions, setSelectedDate } = useTransactions();
+  const { setSelectedDate, siteExpenses } = useTransactions();
+  const { categories } = useCategories();
   // 表示モードと抽出月の状態
   const [viewMode, setViewMode] = React.useState<'date'|'detail'>('date');
   const [selectedMonth, setSelectedMonth] = React.useState<string>(`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`);
 
   // TOP10データの計算
   const topExpenses = React.useMemo(() => {
-    if (!transactions) return [] as any[];
+    if (!siteExpenses) return [] as any[];
     const [year, month] = selectedMonth.split('-').map((n) => parseInt(n, 10));
-    const monthTx = transactions.filter((t) => t.type === 'expense' && t.date && t.date.startsWith(`${year}-${String(month).padStart(2,'0')}`));
+    const monthTx = siteExpenses.filter((t) => t.date && t.date.startsWith(`${year}-${String(month).padStart(2,'0')}`));
     if (viewMode === 'date') {
       const byDate = new Map<string, number>();
       monthTx.forEach((t) => {
@@ -88,7 +89,7 @@ const SideBar: React.FC<SideBarProps> = ({
     } else {
       return monthTx.slice().sort((a,b)=> b.amount - a.amount).slice(0,10);
     }
-  }, [transactions, selectedMonth, viewMode]);
+  }, [siteExpenses, selectedMonth, viewMode]);
 
   const formatDate = (d: string) => d.replace(/-/g, '/');
 
@@ -96,7 +97,7 @@ const SideBar: React.FC<SideBarProps> = ({
     <div>
       <Toolbar>
         <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-          生活管理確認システム
+          実行予算管理システム
         </Typography>
       </Toolbar>
       <Divider />
@@ -210,10 +211,15 @@ const SideBar: React.FC<SideBarProps> = ({
             const amount = (item as any).amount;
             const datePart = (item as any).date ?? '';
             const content = (item as any).content ?? '';
+            const categoryId = (item as any).categoryId ?? '';
+            // カテゴリー名を取得
+            const category = categories.find(c => c.id === categoryId);
+            const categoryName = category?.name || '不明なカテゴリー';
+            
             // 第一行: 日付, 第二行: 金額, 第三行: 詳細(ディスプレイは日付or詳細モードに応じて切替)
             const firstLine = viewMode === 'date' ? formatDate(datePart) : formatDate(datePart);
             const secondLine = `¥${amount.toLocaleString()}`;
-            const thirdLine = viewMode === 'detail' ? String(content).slice(0, 40) : '';
+            const thirdLine = viewMode === 'detail' ? `[${categoryName}] ${String(content).slice(0, 25)}` : '';
             // クリック時に取引日を設定する
             const handleClick = () => {
               if (viewMode === 'date' && datePart && setSelectedDate) {
@@ -229,7 +235,12 @@ const SideBar: React.FC<SideBarProps> = ({
                 <Card variant="outlined" sx={{ height: 'auto', cursor: 'pointer' }} onClick={handleClick}>
                   <CardContent>
                     <Typography variant="body2" color="text.secondary">{firstLine}</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>{secondLine}{thirdLine ? `\n${thirdLine}` : ''}</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>{secondLine}</Typography>
+                    {thirdLine && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        {thirdLine}
+                      </Typography>
+                    )}
                   </CardContent>
                 </Card>
               </Box>

@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { arrayUnion } from 'firebase/firestore';
-import { Transaction, SiteTransaction } from '../types';
+import { Transaction, SiteTransaction, SiteIncome, SiteExpense } from '../types';
 
 interface TransactionContextType {
   // 既存のトランザクション機能
@@ -33,6 +33,19 @@ interface TransactionContextType {
   getSiteTransactionsByCategory: (categoryId: string) => SiteTransaction[];
   getSiteTransactionsBySiteAndCategory: (siteId: string, categoryId: string) => SiteTransaction[];
   siteTransactionLoading: boolean;
+  
+  // 新しい収入・支出分離機能
+  siteIncomes: SiteIncome[];
+  siteExpenses: SiteExpense[];
+  addSiteIncome: (income: Omit<SiteIncome, 'id' | 'type' | 'category'>) => Promise<string>;
+  addSiteExpense: (expense: Omit<SiteExpense, 'id' | 'type'>) => Promise<string>;
+  updateSiteIncome: (id: string, updates: Partial<Omit<SiteIncome, 'id' | 'type' | 'category'>>) => Promise<void>;
+  updateSiteExpense: (id: string, updates: Partial<Omit<SiteExpense, 'id' | 'type'>>) => Promise<void>;
+  deleteSiteIncome: (id: string) => Promise<void>;
+  deleteSiteExpense: (id: string) => Promise<void>;
+  getSiteIncomesBySite: (siteId: string) => SiteIncome[];
+  getSiteExpensesBySite: (siteId: string) => SiteExpense[];
+  incomeExpenseLoading: boolean;
 }
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined);
@@ -63,6 +76,11 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
   // 新しい現場ベーストランザクション状態
   const [siteTransactions, setSiteTransactions] = useState<SiteTransaction[]>([]);
   const [siteTransactionLoading, setSiteTransactionLoading] = useState(true);
+  
+  // 収入・支出分離状態
+  const [siteIncomes, setSiteIncomes] = useState<SiteIncome[]>([]);
+  const [siteExpenses, setSiteExpenses] = useState<SiteExpense[]>([]);
+  const [incomeExpenseLoading, setIncomeExpenseLoading] = useState(true);
   
   console.log('🔧 初期状態:', { transactionsLength: transactions.length, loading });
 
@@ -177,6 +195,37 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
       console.error('❌ 現場ベーストランザクション取得エラー:', error);
     } finally {
       setSiteTransactionLoading(false);
+    }
+  };
+
+  // 現場別収入・支出を取得
+  const fetchSiteIncomesAndExpenses = async () => {
+    try {
+      console.log('💰 現場別収入・支出を取得中...');
+      
+      // 収入を取得
+      const incomesSnapshot = await getDocs(collection(db, 'SiteIncomes'));
+      const incomesData = incomesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as SiteIncome[];
+      
+      // 支出を取得
+      const expensesSnapshot = await getDocs(collection(db, 'SiteExpenses'));
+      const expensesData = expensesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as SiteExpense[];
+      
+      console.log('💰 取得した収入:', incomesData.length);
+      console.log('💸 取得した支出:', expensesData.length);
+      
+      setSiteIncomes(incomesData);
+      setSiteExpenses(expensesData);
+    } catch (error) {
+      console.error('❌ 収入・支出取得エラー:', error);
+    } finally {
+      setIncomeExpenseLoading(false);
     }
   };
 
@@ -342,12 +391,125 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     );
   };
 
+  // 収入関連の関数
+  const addSiteIncome = async (incomeData: Omit<SiteIncome, 'id' | 'type' | 'category'>): Promise<string> => {
+    try {
+      console.log('💰 現場別収入追加:', incomeData);
+      const newIncome = {
+        ...incomeData,
+        type: 'income' as const,
+        category: '売上' as const,
+      };
+      
+      const docRef = await addDoc(collection(db, 'SiteIncomes'), newIncome);
+      const incomeWithId: SiteIncome = {
+        id: docRef.id,
+        ...newIncome,
+      };
+      
+      setSiteIncomes(prev => [...prev, incomeWithId]);
+      console.log('✅ 現場別収入追加成功:', incomeWithId);
+      return docRef.id;
+    } catch (error) {
+      console.error('❌ 現場別収入追加エラー:', error);
+      throw error;
+    }
+  };
+
+  const addSiteExpense = async (expenseData: Omit<SiteExpense, 'id' | 'type'>): Promise<string> => {
+    try {
+      console.log('💸 現場別支出追加:', expenseData);
+      const newExpense = {
+        ...expenseData,
+        type: 'expense' as const,
+      };
+      
+      const docRef = await addDoc(collection(db, 'SiteExpenses'), newExpense);
+      const expenseWithId: SiteExpense = {
+        id: docRef.id,
+        ...newExpense,
+      };
+      
+      setSiteExpenses(prev => [...prev, expenseWithId]);
+      console.log('✅ 現場別支出追加成功:', expenseWithId);
+      return docRef.id;
+    } catch (error) {
+      console.error('❌ 現場別支出追加エラー:', error);
+      throw error;
+    }
+  };
+
+  const updateSiteIncome = async (id: string, updates: Partial<Omit<SiteIncome, 'id' | 'type' | 'category'>>) => {
+    try {
+      const cleanUpdates: any = {};
+      Object.keys(updates).forEach(key => {
+        const value = (updates as any)[key];
+        if (value !== undefined) {
+          cleanUpdates[key] = value;
+        }
+      });
+      
+      await updateDoc(doc(db, 'SiteIncomes', id), cleanUpdates);
+      setSiteIncomes(prev => prev.map(income => income.id === id ? { ...income, ...updates } : income));
+    } catch (error) {
+      console.error('❌ 現場別収入更新エラー:', error);
+      throw error;
+    }
+  };
+
+  const updateSiteExpense = async (id: string, updates: Partial<Omit<SiteExpense, 'id' | 'type'>>) => {
+    try {
+      const cleanUpdates: any = {};
+      Object.keys(updates).forEach(key => {
+        const value = (updates as any)[key];
+        if (value !== undefined) {
+          cleanUpdates[key] = value;
+        }
+      });
+      
+      await updateDoc(doc(db, 'SiteExpenses', id), cleanUpdates);
+      setSiteExpenses(prev => prev.map(expense => expense.id === id ? { ...expense, ...updates } : expense));
+    } catch (error) {
+      console.error('❌ 現場別支出更新エラー:', error);
+      throw error;
+    }
+  };
+
+  const deleteSiteIncome = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'SiteIncomes', id));
+      setSiteIncomes(prev => prev.filter(income => income.id !== id));
+    } catch (error) {
+      console.error('❌ 現場別収入削除エラー:', error);
+      throw error;
+    }
+  };
+
+  const deleteSiteExpense = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'SiteExpenses', id));
+      setSiteExpenses(prev => prev.filter(expense => expense.id !== id));
+    } catch (error) {
+      console.error('❌ 現場別支出削除エラー:', error);
+      throw error;
+    }
+  };
+
+  const getSiteIncomesBySite = (siteId: string): SiteIncome[] => {
+    return siteIncomes.filter(income => income.siteId === siteId);
+  };
+
+  const getSiteExpensesBySite = (siteId: string): SiteExpense[] => {
+    return siteExpenses.filter(expense => expense.siteId === siteId);
+  };
+
   useEffect(() => {
     console.log('🚀 TransactionProvider mounted, fetching transactions...');
     console.log('🔧 useEffect実行時のstate:', { transactionsLength: transactions.length, loading });
     console.log('🔧 Firebase db object:', db);
     fetchTransactions();
     fetchSiteTransactions(); // 現場ベーストランザクションも取得
+    fetchSiteIncomesAndExpenses(); // 収入・支出も取得
   }, []);
 
   // トランザクション状態の変更を監視
@@ -385,6 +547,19 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     getSiteTransactionsByCategory,
     getSiteTransactionsBySiteAndCategory,
     siteTransactionLoading,
+    
+    // 収入・支出分離機能
+    siteIncomes,
+    siteExpenses,
+    addSiteIncome,
+    addSiteExpense,
+    updateSiteIncome,
+    updateSiteExpense,
+    deleteSiteIncome,
+    deleteSiteExpense,
+    getSiteIncomesBySite,
+    getSiteExpensesBySite,
+    incomeExpenseLoading,
   };
 
   return (

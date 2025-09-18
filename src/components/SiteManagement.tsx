@@ -30,7 +30,12 @@ import {
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
+import { useTransactions } from '../contexts/TransactionContext';
 import { Site } from '../types';
+import { 
+  calculateCurrentMonthSiteExpenseTotal, 
+  calculateSiteBudgetRemaining 
+} from '../utils/transactionCalculations';
 
 interface SiteFormData {
   name: string;
@@ -52,6 +57,7 @@ const SiteManagement: React.FC = () => {
   } = useSites();
   
   const { getTotalBudgetBySite } = useCategories();
+  const { siteExpenses, incomeExpenseLoading } = useTransactions();
 
   // フォーム状態
   const [openDialog, setOpenDialog] = useState(false);
@@ -162,7 +168,7 @@ const SiteManagement: React.FC = () => {
     setSelectedSiteId(siteId === selectedSiteId ? null : siteId);
   };
 
-  if (loading) {
+  if (loading || incomeExpenseLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <Typography>現場データを読み込み中...</Typography>
@@ -198,6 +204,9 @@ const SiteManagement: React.FC = () => {
         <Grid container spacing={2}>
           {sites.map((site) => {
             const totalBudget = getTotalBudgetBySite(site.id);
+            const siteExpenseTotal = calculateCurrentMonthSiteExpenseTotal(siteExpenses, site.id);
+            const siteBudgetRemaining = calculateSiteBudgetRemaining(totalBudget, siteExpenseTotal);
+            const isSiteOverBudget = siteBudgetRemaining < 0;
             const isSelected = selectedSiteId === site.id;
             
             return (
@@ -254,8 +263,22 @@ const SiteManagement: React.FC = () => {
                       </Typography>
                     )}
 
-                    <Typography variant="body2" color="primary">
+                    <Typography variant="body2" color="primary" mb={1}>
                       予算合計: ¥{totalBudget.toLocaleString()}
+                    </Typography>
+
+                    <Typography variant="body2" color="text.secondary" mb={1}>
+                      支出合計: ¥{siteExpenseTotal.toLocaleString()}
+                    </Typography>
+
+                    <Typography 
+                      variant="body2" 
+                      color={isSiteOverBudget ? 'error' : 'success'}
+                      fontWeight="bold"
+                      mb={1}
+                    >
+                      予算残: ¥{siteBudgetRemaining.toLocaleString()}
+                      {isSiteOverBudget && ' (予算超過)'}
                     </Typography>
 
                     {site.comment && (

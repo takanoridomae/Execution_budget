@@ -53,22 +53,38 @@ export const SiteProvider: React.FC<SiteProviderProps> = ({ children }) => {
   const fetchSites = async () => {
     try {
       console.log('🏗️ 現場データを取得中...');
+      console.log('🏗️ DB接続状況:', db);
+      console.log('🏗️ コレクション名: Sites');
       
       const q = query(
         collection(db, 'Sites'),
         orderBy('createdAt', 'desc')
       );
       
+      console.log('🏗️ クエリ実行中...');
       const querySnapshot = await getDocs(q);
-      const sitesData = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Site[];
+      console.log('🏗️ クエリ結果:', {
+        empty: querySnapshot.empty,
+        size: querySnapshot.size,
+        docs: querySnapshot.docs.length
+      });
+      
+      const sitesData = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        console.log('🏗️ 現場ドキュメント:', { id: doc.id, data });
+        return {
+          id: doc.id,
+          ...data,
+        };
+      }) as Site[];
       
       console.log('🏗️ 取得した現場データ:', sitesData);
+      console.log('🏗️ 現場数:', sitesData.length);
+      console.log('🏗️ アクティブな現場:', sitesData.filter(site => site.isActive));
       setSites(sitesData);
     } catch (error) {
       console.error('❌ 現場データの取得に失敗:', error);
+      console.error('❌ エラー詳細:', error);
     } finally {
       setLoading(false);
     }

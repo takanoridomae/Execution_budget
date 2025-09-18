@@ -6,6 +6,7 @@ import Calendar from '../components/Calendar';
 import TransactionMenu from '../components/TransactionMenu';
 import SiteTransactionForm from '../components/SiteTransactionForm';
 import TransactionDetails from '../components/TransactionDetails';
+import DataInitializer from '../components/DataInitializer';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useSites } from '../contexts/SiteContext';
 
@@ -17,6 +18,8 @@ const Home: React.FC = () => {
 
   return (
     <Container maxWidth="xl" sx={{ py: 2, position: 'relative' }}>
+      {/* データ初期化コンポーネント */}
+      <DataInitializer />
       {/* 背景オーバーレイ（小さな画面のみ） */}
       {showTransactionForm && (
         <Box
@@ -52,7 +55,7 @@ const Home: React.FC = () => {
             maxWidth: { xs: 'calc(100vw - 32px)', sm: 350, lg: 'none' },
             maxHeight: { xs: 'calc(100vh - 64px)', lg: 'none' },
             overflow: { xs: 'hidden', lg: 'visible' },
-            zIndex: 9999, // 常に最上位に表示
+            zIndex: 1300, // Material-UIのModal標準レベル
             backgroundColor: 'white',
             borderRadius: 2,
             boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
