@@ -5,8 +5,7 @@ import { useAlert } from './useAlert';
 import { 
   saveImagesHybridBatch,
   getImageFromLocalStorage,
-  deleteImageFromLocalStorage,
-  deleteImageFromFirebaseStorage
+  deleteImageFromLocalStorage
 } from '../utils/imageUtils';
 
 export interface EditForm {
@@ -220,7 +219,28 @@ export const useTransactionEdit = () => {
 
   // 編集保存処理
   const handleSave = async () => {
-    if (!editingTransaction) return;
+    if (!editingTransaction) {
+      console.log('❌ 編集対象の取引がありません');
+      return;
+    }
+
+    console.log('💾 編集保存開始', {
+      transactionId: editingTransaction.id,
+      editForm: editForm
+    });
+
+    // バリデーション
+    if (!editForm.amount || isNaN(Number(editForm.amount)) || Number(editForm.amount) <= 0) {
+      console.log('❌ 金額バリデーションエラー', editForm.amount);
+      showError('正しい金額を入力してください');
+      return;
+    }
+
+    if (!editForm.category) {
+      console.log('❌ カテゴリーバリデーションエラー', editForm.category);
+      showError('カテゴリーを選択してください');
+      return;
+    }
 
     try {
       console.log('🚀 編集保存開始', {

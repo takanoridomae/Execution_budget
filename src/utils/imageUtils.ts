@@ -368,7 +368,17 @@ export const saveImageToLocalStorage = (transactionId: string, imageBase64: stri
 // ローカルストレージから画像を取得
 export const getImageFromLocalStorage = (transactionId: string, imageId: string): string | null => {
   const storageKey = `transaction_image_${transactionId}_${imageId}`;
-  return localStorage.getItem(storageKey);
+  const imageData = localStorage.getItem(storageKey);
+  
+  console.log('🔍 ローカルストレージ画像取得:', {
+    transactionId,
+    imageId,
+    storageKey,
+    存在: imageData !== null,
+    データサイズ: imageData ? `${Math.round(imageData.length / 1024)} KB` : '0 KB'
+  });
+  
+  return imageData;
 };
 
 // 統一画像表示機能（ローカル + Firebase URL対応）
@@ -562,7 +572,25 @@ export const deleteTransactionImages = (transactionId: string): void => {
 // 特定の画像を削除
 export const deleteImageFromLocalStorage = (transactionId: string, imageId: string): void => {
   const storageKey = `transaction_image_${transactionId}_${imageId}`;
+  
+  // 削除前の存在確認
+  const existsBefore = localStorage.getItem(storageKey) !== null;
+  console.log('🗑️ ローカルストレージ画像削除:', {
+    transactionId,
+    imageId,
+    storageKey,
+    削除前存在: existsBefore
+  });
+  
   localStorage.removeItem(storageKey);
+  
+  // 削除後の確認
+  const existsAfter = localStorage.getItem(storageKey) !== null;
+  console.log('🗑️ ローカルストレージ削除完了:', {
+    storageKey,
+    削除後存在: existsAfter,
+    削除成功: existsBefore && !existsAfter
+  });
 };
 
 // ローカルストレージの使用量をチェック
@@ -586,33 +614,212 @@ export const checkLocalStorageUsage = (): { used: number; available: number; per
   return { used, available, percentage };
 };
 
-// Firebase Storage準備状況チェック
-export const checkFirebaseStorageReady = async (): Promise<boolean> => {
+// 現場画像用のFirebase Storageアップロード
+export const uploadSiteImageToFirebaseStorage = async (
+  siteId: string,
+  file: File
+): Promise<string> => {
+  console.log('☁️ 現場画像 Firebase Storage アップロード開始', {
+    fileName: file.name,
+    size: file.size,
+    siteId
+  });
+
   try {
-    // テスト用の小さなファイルでFirebase Storageの接続をテスト
-    const testData = new Blob(['test'], { type: 'text/plain' });
-    const testRef = ref(storage, `test/${Date.now()}_connection_test.txt`);
+    // より強い圧縮（無料枠節約）
+    const isMobile = isMobileDevice();
+    const maxWidth = isMobile ? 500 : 700;
+    const maxHeight = isMobile ? 400 : 500;
+    const quality = isMobile ? 0.5 : 0.6;
     
-    console.log('🔍 Firebase Storage接続テスト中...');
+    const compressedBase64 = await resizeImage(file, maxWidth, maxHeight, quality);
+    const blob = base64ToBlob(compressedBase64);
     
-    // 5秒以内でタイムアウト
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout')), 5000)
-    );
-    
-    const uploadPromise = uploadBytes(testRef, testData).then(async (snapshot) => {
-      // テストファイルをすぐ削除
-      await deleteObject(snapshot.ref);
-      return true;
+    console.log('📊 現場画像圧縮完了', {
+      元サイズ: `${Math.round(file.size / 1024)} KB`,
+      圧縮後: `${Math.round(blob.size / 1024)} KB`,
+      圧縮率: `${Math.round((1 - blob.size / file.size) * 100)}%`
     });
     
-    await Promise.race([uploadPromise, timeoutPromise]);
+    // Firebase Storageにアップロード（現場用パス）
+    const timestamp = Date.now();
+    const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+    const storageRef = ref(storage, `sites/${siteId}/images/${fileName}`);
     
-    console.log('✅ Firebase Storage接続成功');
+    // メタデータを明示的に設定
+    const metadata = {
+      contentType: 'image/jpeg',
+      customMetadata: {
+        'originalFileName': file.name,
+        'siteId': siteId,
+        'uploadTimestamp': timestamp.toString()
+      }
+    };
+    
+    console.log('📤 現場画像 Firebase Storage アップロード中...', {
+      path: `sites/${siteId}/images/${fileName}`,
+      contentType: metadata.contentType,
+      blobSize: blob.size
+    });
+    
+    const snapshot = await uploadBytes(storageRef, blob, metadata);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    // アップロード数をカウント（使用量推定用）
+    const currentCount = localStorage.getItem('firebase_image_count') || '0';
+    localStorage.setItem('firebase_image_count', (parseInt(currentCount) + 1).toString());
+    
+    console.log('✅ 現場画像 Firebase Storage アップロード成功', {
+      downloadURL,
+      アップロード総数: parseInt(currentCount) + 1
+    });
+    
+    return downloadURL;
+    
+  } catch (error) {
+    console.error('❌ 現場画像 Firebase Storage アップロードエラー:', error);
+    throw new Error(`現場画像のFirebase Storageアップロードに失敗しました: ${error instanceof Error ? error.message : error}`);
+  }
+};
+
+// 現場画像用のハイブリッド保存
+export const saveSiteImageHybrid = async (
+  siteId: string,
+  file: File
+): Promise<{ imageId?: string; imageUrl?: string; saveMethod: 'local' | 'firebase' }> => {
+  console.log('🔄 現場画像ハイブリッド保存開始', {
+    fileName: file.name,
+    size: `${Math.round(file.size / 1024)} KB`,
+    siteId
+  });
+
+  // Firebase Storage設定状況をチェック
+  const isFirebaseReady = await checkFirebaseStorageReady();
+  
+  if (isFirebaseReady) {
+    console.log('🚀 現場画像 Firebase Storage準備完了、デバイス間同期有効');
+  } else {
+    console.log('⚠️ 現場画像 Firebase Storage未準備、ローカル保存で一時対応');
+    
+    // Firebase未準備時のローカル保存
+    try {
+      const compressedBase64 = await resizeImage(file, 600, 400, 0.7);
+      
+      const usage = checkLocalStorageUsage();
+      if (usage.percentage < 85) {
+        const imageId = saveImageToLocalStorage(siteId, compressedBase64);
+        console.log('✅ 現場画像ローカル保存成功（Firebase準備中）', {
+          imageId,
+          使用率: `${Math.round(usage.percentage)}%`
+        });
+        return { imageId, saveMethod: 'local' };
+      }
+    } catch (localError) {
+      console.warn('⚠️ 現場画像ローカル保存失敗', localError);
+    }
+  }
+
+  // Firebase Storageに保存（權限エラーのハンドリング改善）
+  const storageStatus = await checkFirebaseStorageUsage();
+  
+  if (storageStatus.canUpload) {
+    try {
+      const imageUrl = await uploadSiteImageToFirebaseStorage(siteId, file);
+      console.log('✅ 現場画像 Firebase Storage保存成功（デバイス間同期）', {
+        imageUrl,
+        推定使用量: storageStatus.recommendation
+      });
+      return { imageUrl, saveMethod: 'firebase' };
+    } catch (firebaseError: any) {
+      console.warn('⚠️ 現場画像 Firebase Storage保存失敗:', firebaseError);
+      
+      // 403エラー（権限）の場合、詳細なメッセージを表示
+      if (firebaseError.code === 'storage/unauthorized') {
+        console.error('🚫 Firebase Storage権限エラー: Firebaseコンソールでルールを確認してください');
+        console.log('💡 Firebase Console > Storage > Rules で以下を設定:');
+        console.log('   allow read, write: if true; // デモ用の一時設定');
+      }
+    }
+  } else {
+    console.warn('⚠️ 現場画像 Firebase Storage使用量上限:', storageStatus.recommendation);
+  }
+
+  // 最終手段：ローカル保存（容量制限無視）
+  try {
+    const compressedBase64 = await resizeImage(file, 400, 300, 0.5);
+    const imageId = saveImageToLocalStorage(siteId, compressedBase64);
+    console.log('✅ 現場画像最終手段ローカル保存', { imageId });
+    return { imageId, saveMethod: 'local' };
+  } catch (finalError) {
+    console.error('❌ 現場画像全保存方法失敗:', finalError);
+    throw new Error('現場画像の保存に失敗しました。ストレージ容量を確認してください。');
+  }
+};
+
+// 現場画像バッチ保存
+export const saveSiteImagesHybridBatch = async (
+  siteId: string,
+  files: File[]
+): Promise<Array<{ imageId?: string; imageUrl?: string; saveMethod: 'local' | 'firebase' }>> => {
+  console.log('🔄 現場画像バッチ保存開始', {
+    ファイル数: files.length,
+    siteId,
+    総サイズ: `${Math.round(files.reduce((sum, f) => sum + f.size, 0) / 1024)} KB`
+  });
+
+  const results = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      console.log(`📸 現場画像 ${i + 1}/${files.length} 保存中: ${file.name}`);
+      const result = await saveSiteImageHybrid(siteId, file);
+      results.push(result);
+      
+      // 1秒間隔で保存（Firebaseレート制限対策）
+      if (i < files.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      console.error(`❌ 現場画像 ${i + 1} 保存失敗:`, error);
+      throw error;
+    }
+  }
+  
+  console.log('✅ 現場画像バッチ保存完了', {
+    成功数: results.length,
+    ローカル: results.filter(r => r.saveMethod === 'local').length,
+    Firebase: results.filter(r => r.saveMethod === 'firebase').length
+  });
+  
+  return results;
+};
+
+// Firebase Storage準備状況チェック（簡易版）
+export const checkFirebaseStorageReady = async (): Promise<boolean> => {
+  try {
+    // Firebase Storage設定の基本確認のみ
+    console.log('🔍 Firebase Storage設定確認中...');
+    
+    if (!storage) {
+      console.warn('⚠️ Firebase Storage未初期化');
+      return false;
+    }
+    
+    // ストレージ参照の作成テスト（実際のアップロードなし）
+    const testRef = ref(storage, 'test/connection_check.txt');
+    if (!testRef) {
+      console.warn('⚠️ Firebase Storage参照作成失敗');
+      return false;
+    }
+    
+    console.log('✅ Firebase Storage設定確認完了');
+    console.log('ℹ️ 実際のアップロードで接続を確認します');
     return true;
     
   } catch (error) {
-    console.warn('⚠️ Firebase Storage接続失敗:', error);
+    console.warn('⚠️ Firebase Storage設定エラー:', error);
+    console.log('🔄 ローカル保存にフォールバックします');
     return false;
   }
 };

@@ -49,6 +49,8 @@ export interface Site {
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
+    imageUrls?: string[]; // Firebase Storageの画像URL配列
+    imageIds?: string[];  // ローカルストレージ用の画像ID配列
 }
 
 // 現場別カテゴリー
@@ -62,6 +64,8 @@ export interface SiteCategory {
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
+    imageUrls?: string[]; // Firebase Storageの画像URL配列
+    imageIds?: string[];  // ローカルストレージ用の画像ID配列
 }
 
 // 現場別予算設定

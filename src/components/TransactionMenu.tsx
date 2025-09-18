@@ -118,7 +118,11 @@ const TransactionMenu: React.FC = () => {
             }}
             onClick={() => openModal('income')}
           >
-            <CardContent sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}>
+            <CardContent sx={{ 
+              textAlign: 'center', 
+              p: isMobile ? 0.5 : 1.5,
+              '&:last-child': { pb: isMobile ? 0.5 : 1.5 }
+            }}>
               <Box display="flex" justifyContent="center" mb={1}>
                 <TrendingUp sx={{ color: '#4caf50', fontSize: isMobile ? 24 : 32 }} />
               </Box>
@@ -126,8 +130,16 @@ const TransactionMenu: React.FC = () => {
                 収入
               </Typography>
               <Typography 
-                variant={isMobile ? "h6" : "h5"} 
-                sx={{ fontWeight: 'bold', color: '#4caf50' }}
+                variant={isMobile ? "body1" : "h6"} 
+                sx={{ 
+                  fontWeight: 'bold', 
+                  color: '#4caf50',
+                  fontSize: isMobile ? '0.875rem' : '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
               >
                 ¥{dayData.income.toLocaleString()}
               </Typography>
@@ -150,7 +162,11 @@ const TransactionMenu: React.FC = () => {
             }}
             onClick={() => openModal('expense')}
           >
-            <CardContent sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}>
+            <CardContent sx={{ 
+              textAlign: 'center', 
+              p: isMobile ? 0.5 : 1.5,
+              '&:last-child': { pb: isMobile ? 0.5 : 1.5 }
+            }}>
               <Box display="flex" justifyContent="center" mb={1}>
                 <TrendingDown sx={{ color: '#f44336', fontSize: isMobile ? 24 : 32 }} />
               </Box>
@@ -158,8 +174,16 @@ const TransactionMenu: React.FC = () => {
                 支出
               </Typography>
               <Typography 
-                variant={isMobile ? "h6" : "h5"} 
-                sx={{ fontWeight: 'bold', color: '#f44336' }}
+                variant={isMobile ? "body1" : "h6"} 
+                sx={{ 
+                  fontWeight: 'bold', 
+                  color: '#f44336',
+                  fontSize: isMobile ? '0.875rem' : '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
               >
                 ¥{dayData.expense.toLocaleString()}
               </Typography>
@@ -177,7 +201,11 @@ const TransactionMenu: React.FC = () => {
               height: '100%'
             }}
           >
-            <CardContent sx={{ textAlign: 'center', p: isMobile ? 1 : 2 }}>
+            <CardContent sx={{ 
+              textAlign: 'center', 
+              p: isMobile ? 0.5 : 1.5,
+              '&:last-child': { pb: isMobile ? 0.5 : 1.5 }
+            }}>
               <Box display="flex" justifyContent="center" mb={1}>
                 <AccountBalance sx={{ 
                   color: dayData.balance >= 0 ? '#2196f3' : '#ff9800', 
@@ -188,10 +216,15 @@ const TransactionMenu: React.FC = () => {
                 残高
               </Typography>
               <Typography 
-                variant={isMobile ? "h6" : "h5"} 
+                variant={isMobile ? "body1" : "h6"} 
                 sx={{ 
                   fontWeight: 'bold', 
-                  color: dayData.balance >= 0 ? '#2196f3' : '#ff9800'
+                  color: dayData.balance >= 0 ? '#2196f3' : '#ff9800',
+                  fontSize: isMobile ? '0.875rem' : '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
                 }}
               >
                 {dayData.balance >= 0 ? '+' : ''}¥{dayData.balance.toLocaleString()}
@@ -279,7 +312,16 @@ const TransactionMenu: React.FC = () => {
                       <Box flex={1}>
                         {/* プライマリ情報 */}
                         <Box display="flex" alignItems="center" gap={1} mb={0.5}>
-                          <Typography variant="h6">
+                          <Typography 
+                            variant="h6"
+                            sx={{ 
+                              fontSize: '1.1rem',
+                              lineHeight: 1.2,
+                              wordBreak: 'keep-all',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
                             ¥{transaction.amount.toLocaleString()}
                           </Typography>
                           <Chip 

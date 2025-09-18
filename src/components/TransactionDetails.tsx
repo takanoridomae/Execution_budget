@@ -5,11 +5,9 @@ import {
   Box,
   List,
   ListItem,
-  ListItemText,
   IconButton,
   Chip,
   Alert,
-  Divider,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -29,7 +27,10 @@ import { useCategories } from '../contexts/CategoryContext';
 import { Transaction, SiteIncome, SiteExpense } from '../types';
 import { useTransactionEdit } from '../hooks/useTransactionEdit';
 import { useTransactionData } from '../hooks/useTransactionData';
+import { useSiteDataEdit } from '../hooks/useSiteDataEdit';
 import TransactionEditForm from './common/TransactionEditForm';
+import SiteIncomeEditForm from './common/SiteIncomeEditForm';
+import SiteExpenseEditForm from './common/SiteExpenseEditForm';
 import { formatDisplayDate } from '../utils/dateUtils';
 import { getImageFromLocalStorage } from '../utils/imageUtils';
 
@@ -53,6 +54,30 @@ const TransactionDetails: React.FC = () => {
     removeExistingImage
   } = useTransactionEdit();
   const { getDayTransactions, incomeTransactions, expenseTransactions, dayIncomes, dayExpenses } = useTransactionData();
+  
+  // 現場別データ編集機能
+  const {
+    editingIncome,
+    incomeEditForm,
+    startIncomeEdit,
+    cancelIncomeEdit,
+    updateIncomeEditForm,
+    handleIncomeSave,
+    handleIncomeDelete,
+    handleIncomeImageSelect,
+    handleIncomeImageRemove,
+    handleIncomeExistingImageRemove,
+    editingExpense,
+    expenseEditForm,
+    startExpenseEdit,
+    cancelExpenseEdit,
+    updateExpenseEditForm,
+    handleExpenseSave,
+    handleExpenseDelete,
+    handleExpenseImageSelect,
+    handleExpenseImageRemove,
+    handleExpenseExistingImageRemove
+  } = useSiteDataEdit();
 
   // 現場別収入データの表示
   const renderSiteIncomeItem = (income: SiteIncome) => {
@@ -66,35 +91,107 @@ const TransactionDetails: React.FC = () => {
           border: '1px solid #ddd', 
           borderRadius: 1, 
           mb: 1,
-          backgroundColor: 'transparent'
+          backgroundColor: editingIncome?.id === income.id ? '#f5f5f5' : 'transparent'
         }}
       >
-        <Box sx={{ width: '100%' }}>
-          <Box display="flex" justifyContent="space-between" alignItems="center">
-            <Box flex={1}>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <Typography variant="h6">
-                  ¥{income.amount.toLocaleString()}
+        {editingIncome?.id === income.id ? (
+          // 編集モード
+          <SiteIncomeEditForm
+            income={income}
+            editForm={incomeEditForm}
+            onUpdateForm={updateIncomeEditForm}
+            onSave={handleIncomeSave}
+            onCancel={cancelIncomeEdit}
+            onImageSelect={handleIncomeImageSelect}
+            onImageRemove={handleIncomeImageRemove}
+            onExistingImageRemove={handleIncomeExistingImageRemove}
+          />
+        ) : (
+          // 表示モード
+          <Box sx={{ width: '100%' }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Box flex={1}>
+                <Box display="flex" alignItems="center" gap={1} mb={1}>
+                  <Typography variant="h6">
+                    ¥{income.amount.toLocaleString()}
+                  </Typography>
+                  <Chip 
+                    label={income.category} 
+                    size="small" 
+                    sx={{
+                      backgroundColor: '#bbdefb',
+                      color: '#1976d2',
+                      fontWeight: 'bold'
+                    }}
+                  />
+                </Box>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
+                  {income.content || '詳細なし'}
                 </Typography>
-                <Chip 
-                  label={income.category} 
-                  size="small" 
-                  sx={{
-                    backgroundColor: '#bbdefb',
-                    color: '#1976d2',
-                    fontWeight: 'bold'
-                  }}
-                />
+                
+                {/* ローカルストレージの画像 */}
+                {income.imageIds && income.imageIds.length > 0 && (
+                  <Box display="flex" gap={1} mt={1} mb={1}>
+                    {income.imageIds.map((imageId, idx) => {
+                      const imageData = getImageFromLocalStorage(income.id, imageId);
+                      if (!imageData) return null;
+                      return (
+                        <img 
+                          key={`income-local-${idx}`} 
+                          src={imageData} 
+                          alt={`収入画像-${idx}`} 
+                          style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                
+                {/* Firebase Storageの画像 */}
+                {income.imageUrls && income.imageUrls.length > 0 && (
+                  <Box display="flex" gap={1} mt={1} mb={1}>
+                    {income.imageUrls.map((url, idx) => (
+                      <img 
+                        key={`income-url-${idx}`} 
+                        src={url} 
+                        alt={`収入画像-${idx}`} 
+                        style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
+                      />
+                    ))}
+                  </Box>
+                )}
+                
+                <Typography variant="caption" color="textSecondary">
+                  現場: {siteName}
+                </Typography>
               </Box>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
-                {income.content || '詳細なし'}
-              </Typography>
-              <Typography variant="caption" color="textSecondary">
-                現場: {siteName}
-              </Typography>
+              <Box display="flex" gap={1}>
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => {
+                    console.log('🔧 現場収入編集ボタンクリック', income);
+                    startIncomeEdit(income);
+                  }}
+                >
+                  <Edit />
+                </IconButton>
+                <IconButton 
+                  size="small" 
+                  color="error"
+                  onClick={() => {
+                    console.log('🗑️ 現場収入削除ボタンクリック', income);
+                    if (window.confirm('この収入記録を削除しますか？')) {
+                      handleIncomeDelete(income.id);
+                    }
+                  }}
+                >
+                  <Delete />
+                </IconButton>
+              </Box>
             </Box>
           </Box>
-        </Box>
+        )}
       </ListItem>
     );
   };
@@ -113,41 +210,121 @@ const TransactionDetails: React.FC = () => {
           border: '1px solid #ddd', 
           borderRadius: 1, 
           mb: 1,
-          backgroundColor: 'transparent'
+          backgroundColor: editingExpense?.id === expense.id ? '#f5f5f5' : 'transparent'
         }}
       >
-        <Box sx={{ width: '100%' }}>
-          <Box display="flex" justifyContent="space-between" alignItems="center">
-            <Box flex={1}>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <Typography variant="h6">
-                  ¥{expense.amount.toLocaleString()}
+        {editingExpense?.id === expense.id ? (
+          // 編集モード
+          <SiteExpenseEditForm
+            expense={expense}
+            editForm={expenseEditForm}
+            onUpdateForm={updateExpenseEditForm}
+            onSave={handleExpenseSave}
+            onCancel={cancelExpenseEdit}
+            onImageSelect={handleExpenseImageSelect}
+            onImageRemove={handleExpenseImageRemove}
+            onExistingImageRemove={handleExpenseExistingImageRemove}
+          />
+        ) : (
+          // 表示モード
+          <Box sx={{ width: '100%' }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Box flex={1}>
+                <Box display="flex" alignItems="center" gap={1} mb={1}>
+                  <Typography variant="h6">
+                    ¥{expense.amount.toLocaleString()}
+                  </Typography>
+                  <Chip 
+                    label={categoryName} 
+                    size="small" 
+                    sx={{
+                      backgroundColor: '#ffcdd2',
+                      color: '#d32f2f',
+                      fontWeight: 'bold'
+                    }}
+                  />
+                </Box>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
+                  {expense.content || '詳細なし'}
                 </Typography>
-                <Chip 
-                  label={categoryName} 
-                  size="small" 
-                  sx={{
-                    backgroundColor: '#ffcdd2',
-                    color: '#d32f2f',
-                    fontWeight: 'bold'
-                  }}
-                />
+                
+                {/* ローカルストレージの画像 */}
+                {expense.imageIds && expense.imageIds.length > 0 && (
+                  <Box display="flex" gap={1} mt={1} mb={1}>
+                    {expense.imageIds.map((imageId, idx) => {
+                      const imageData = getImageFromLocalStorage(expense.id, imageId);
+                      if (!imageData) return null;
+                      return (
+                        <img 
+                          key={`expense-local-${idx}`} 
+                          src={imageData} 
+                          alt={`支出画像-${idx}`} 
+                          style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                
+                {/* Firebase Storageの画像 */}
+                {expense.imageUrls && expense.imageUrls.length > 0 && (
+                  <Box display="flex" gap={1} mt={1} mb={1}>
+                    {expense.imageUrls.map((url, idx) => (
+                      <img 
+                        key={`expense-url-${idx}`} 
+                        src={url} 
+                        alt={`支出画像-${idx}`} 
+                        style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
+                      />
+                    ))}
+                  </Box>
+                )}
+                
+                <Typography variant="caption" color="textSecondary">
+                  現場: {siteName}
+                </Typography>
               </Box>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 0.5 }}>
-                {expense.content || '詳細なし'}
-              </Typography>
-              <Typography variant="caption" color="textSecondary">
-                現場: {siteName}
-              </Typography>
+              <Box display="flex" gap={1}>
+                <IconButton 
+                  size="small" 
+                  color="primary"
+                  onClick={() => {
+                    console.log('🔧 現場支出編集ボタンクリック', expense);
+                    startExpenseEdit(expense);
+                  }}
+                >
+                  <Edit />
+                </IconButton>
+                <IconButton 
+                  size="small" 
+                  color="error"
+                  onClick={() => {
+                    console.log('🗑️ 現場支出削除ボタンクリック', expense);
+                    if (window.confirm('この支出記録を削除しますか？')) {
+                      handleExpenseDelete(expense.id);
+                    }
+                  }}
+                >
+                  <Delete />
+                </IconButton>
+              </Box>
             </Box>
           </Box>
-        </Box>
+        )}
       </ListItem>
     );
   };
 
   // 取引項目の表示
-  const renderTransactionItem = (transaction: Transaction) => (
+  const renderTransactionItem = (transaction: Transaction) => {
+    console.log('📋 取引項目レンダリング', {
+      id: transaction.id,
+      amount: transaction.amount,
+      category: transaction.category,
+      isEditing: editingTransaction?.id === transaction.id
+    });
+    
+    return (
     <ListItem 
       key={transaction.id}
       sx={{ 
@@ -223,7 +400,10 @@ const TransactionDetails: React.FC = () => {
               <IconButton 
                 size="small" 
                 color="primary"
-                onClick={() => startEdit(transaction)}
+                onClick={() => {
+                  console.log('🔧 編集ボタンクリック', transaction);
+                  startEdit(transaction);
+                }}
               >
                 <Edit />
               </IconButton>
@@ -240,6 +420,7 @@ const TransactionDetails: React.FC = () => {
       )}
     </ListItem>
   );
+  };
 
   if (!selectedDate) {
     return (
@@ -285,8 +466,8 @@ const TransactionDetails: React.FC = () => {
       </Typography>
 
       {alert && (
-        <Alert severity={alert.type} sx={{ mb: 2 }}>
-          {alert.message}
+        <Alert severity={alert?.type} sx={{ mb: 2 }}>
+          {alert?.message}
         </Alert>
       )}
 
@@ -319,7 +500,18 @@ const TransactionDetails: React.FC = () => {
                   <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
                     収入 ({dayIncomes.length}件)
                   </Typography>
-                  <Typography variant="body2" sx={{ ml: 1, color: '#1976d2' }}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      ml: 1, 
+                      color: '#1976d2',
+                      fontSize: '0.875rem',
+                      lineHeight: 1.2,
+                      wordBreak: 'keep-all',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
                     ¥{dayIncomes.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
                   </Typography>
                 </Box>
@@ -391,7 +583,18 @@ const TransactionDetails: React.FC = () => {
                   <Typography variant="h6" sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
                     支出 ({dayExpenses.length}件)
                   </Typography>
-                  <Typography variant="body2" sx={{ ml: 1, color: '#d32f2f' }}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      ml: 1, 
+                      color: '#d32f2f',
+                      fontSize: '0.875rem',
+                      lineHeight: 1.2,
+                      wordBreak: 'keep-all',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
                     ¥{dayExpenses.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
                   </Typography>
                 </Box>

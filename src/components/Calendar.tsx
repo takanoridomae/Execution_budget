@@ -192,8 +192,12 @@ const Calendar: React.FC = () => {
                           color="success.main" 
                           display="block"
                           sx={{ 
-                            fontSize: '0.7rem',
-                            lineHeight: 1.1
+                            fontSize: '0.65rem',
+                            lineHeight: 1.1,
+                            wordBreak: 'keep-all',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}
                         >
                           +¥{dayData.income.toLocaleString()}
@@ -205,8 +209,12 @@ const Calendar: React.FC = () => {
                           color="error.main" 
                           display="block"
                           sx={{ 
-                            fontSize: '0.7rem',
-                            lineHeight: 1.1
+                            fontSize: '0.65rem',
+                            lineHeight: 1.1,
+                            wordBreak: 'keep-all',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}
                         >
                           -¥{dayData.expense.toLocaleString()}
@@ -228,8 +236,10 @@ const Calendar: React.FC = () => {
                   >
                     {/* モバイルではK表記、デスクトップでは通常表記 */}
                     {dayData.balance >= 0 ? '+' : ''}¥{
-                      isSmallScreen && Math.abs(dayData.balance) >= 1000 
-                        ? `${Math.floor(Math.abs(dayData.balance) / 1000)}k` 
+                      isSmallScreen && Math.abs(dayData.balance) >= 10000 
+                        ? (Math.abs(dayData.balance) >= 1000000 
+                          ? `${Math.floor(Math.abs(dayData.balance) / 1000000)}M`
+                          : `${Math.floor(Math.abs(dayData.balance) / 1000)}k`)
                         : dayData.balance.toLocaleString()
                     }
                   </Typography>
@@ -292,7 +302,17 @@ const Calendar: React.FC = () => {
           <Grid size={4}>
             <Box textAlign="center">
               <Typography variant="body2" color="textSecondary">収入</Typography>
-              <Typography variant="h6" color="success.main">
+              <Typography 
+                variant="h6" 
+                color="success.main"
+                sx={{ 
+                  fontSize: '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
+              >
                 ¥{dayData.income.toLocaleString()}
               </Typography>
             </Box>
@@ -300,7 +320,17 @@ const Calendar: React.FC = () => {
           <Grid size={4}>
             <Box textAlign="center">
               <Typography variant="body2" color="textSecondary">支出</Typography>
-              <Typography variant="h6" color="error.main">
+              <Typography 
+                variant="h6" 
+                color="error.main"
+                sx={{ 
+                  fontSize: '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
+              >
                 ¥{dayData.expense.toLocaleString()}
               </Typography>
             </Box>
@@ -311,6 +341,13 @@ const Calendar: React.FC = () => {
               <Typography 
                 variant="h6" 
                 color={dayData.balance >= 0 ? 'success.main' : 'error.main'}
+                sx={{ 
+                  fontSize: '1.1rem',
+                  lineHeight: 1.2,
+                  wordBreak: 'keep-all',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
               >
                 {dayData.balance >= 0 ? '+' : ''}¥{dayData.balance.toLocaleString()}
               </Typography>

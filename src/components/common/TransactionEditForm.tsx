@@ -69,7 +69,14 @@ const TransactionEditForm: React.FC<TransactionEditFormProps> = ({
             />
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <IconButton size="small" color="primary" onClick={onSave}>
+            <IconButton 
+              size="small" 
+              color="primary" 
+              onClick={() => {
+                console.log('💾 保存ボタンクリック');
+                onSave();
+              }}
+            >
               <Save />
             </IconButton>
             <IconButton size="small" onClick={onCancel}>

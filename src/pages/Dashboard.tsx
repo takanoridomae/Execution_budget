@@ -37,13 +37,17 @@ const Dashboard: React.FC = () => {
   const selectedSiteIncomeAmount = selectedSiteId ? getSiteIncomesBySite(selectedSiteId).reduce((sum, income) => sum + income.amount, 0) : 0;
   const selectedSiteExpenseAmount = selectedSiteId ? getSiteExpensesBySite(selectedSiteId).reduce((sum, expense) => sum + expense.amount, 0) : 0;
   const budgetMinusExpense = selectedSiteBudget - selectedSiteExpenseAmount;
-  const incomeMinusBudget = selectedSiteIncomeAmount - selectedSiteBudget;
+  const incomeMinusExpense = selectedSiteIncomeAmount - selectedSiteExpenseAmount;
 
   // 全体の統計
   const totalSites = activeSites.length;
   const totalBudget = activeSites.reduce((sum, site) => sum + getTotalBudgetBySite(site.id), 0);
-  const totalExpenseCount = siteExpenses.length;
-  const totalExpenseAmount = siteExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  
+  // 稼働中現場のみの支出を計算
+  const activeSiteIds = activeSites.map(site => site.id);
+  const activeSiteExpenses = siteExpenses.filter(expense => activeSiteIds.includes(expense.siteId));
+  const totalExpenseCount = activeSiteExpenses.length;
+  const totalExpenseAmount = activeSiteExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   if (showSiteManagement) {
     return (
@@ -210,7 +214,7 @@ const Dashboard: React.FC = () => {
                     <strong>カテゴリー数:</strong> {selectedSiteCategories.length}
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>実績売上:</strong> ¥{selectedSiteIncomeAmount.toLocaleString()}
+                    <strong>実績入金:</strong> ¥{selectedSiteIncomeAmount.toLocaleString()}
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 1 }}>
                     <strong>実績支出:</strong> ¥{selectedSiteExpenseAmount.toLocaleString()}
@@ -223,10 +227,10 @@ const Dashboard: React.FC = () => {
                     <strong>予算残高:</strong> {budgetMinusExpense >= 0 ? "+" : ""}¥{budgetMinusExpense.toLocaleString()}
                   </Typography>
                   <Typography variant="body2" sx={{ 
-                    color: incomeMinusBudget >= 0 ? 'success.main' : 'error.main',
+                    color: incomeMinusExpense >= 0 ? 'success.main' : 'error.main',
                     fontWeight: 'bold'
                   }}>
-                    <strong>売上利益予定:</strong> {incomeMinusBudget >= 0 ? "+" : ""}¥{incomeMinusBudget.toLocaleString()}
+                    <strong>実績利益:</strong> {incomeMinusExpense >= 0 ? "+" : ""}¥{incomeMinusExpense.toLocaleString()}
                   </Typography>
                   {selectedSite.comment && (
                     <>

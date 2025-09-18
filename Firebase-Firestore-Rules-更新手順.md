@@ -1,3 +1,19 @@
+# Firebase Firestore Rules 更新手順
+
+## 🔧 手動でFirestore Rulesを更新
+
+### 1. Firebase Consoleにアクセス
+1. [Firebase Console](https://console.firebase.google.com/) を開く
+2. プロジェクト「execution-budget」を選択
+
+### 2. Firestore Database Rules画面に移動
+1. 左メニューから「Firestore Database」をクリック
+2. 上部タブの「ルール」をクリック
+
+### 3. 現在のルール設定を更新
+以下のルールをコピーして貼り付け：
+
+```javascript
 rules_version = '2';
 
 // Firestore Security Rules for Site-based Budget Management
@@ -64,3 +80,11 @@ service cloud.firestore {
 
 // 注意: 本番環境では適切な認証・認可ルールを設定してください
 // 現在のルールはデモアプリ用の設定です
+```
+
+### 4. 公開
+1. 「公開」ボタンをクリック
+2. 確認ダイアログで「公開」をクリック
+
+## 🧪 テスト方法
+ルール更新後、アプリケーションでFirestore接続をテストして、エラーが出ないことを確認してください。

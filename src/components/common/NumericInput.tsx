@@ -83,6 +83,12 @@ const NumericInput: React.FC<NumericInputProps> = ({
 
   // 表示用の値（3桁区切り）
   const displayValue = value ? formatStringAsNumber(value) : '';
+  
+  console.log('🔢 NumericInput レンダリング', {
+    inputValue: value,
+    displayValue: displayValue,
+    label: textFieldProps.label
+  });
 
   return (
     <TextField
