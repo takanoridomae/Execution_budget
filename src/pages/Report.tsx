@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Card, CardHeader, CardContent, Button, FormControl, Select, MenuItem, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody, InputLabel, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { Photo, Close, Article } from '@mui/icons-material';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useSites } from '../contexts/SiteContext';
 import { getImageFromLocalStorage } from '../utils/imageUtils';
 import { formatCurrency } from '../utils/numberUtils';
 
+interface ChartDataItem {
+  name: string;
+  categoryId: string;
+  budget: number;
+  actual: number;
+  達成率: number;
+}
 
 const Report: React.FC = () => {
   const { siteExpenses, siteIncomes } = useTransactions();
@@ -321,6 +329,44 @@ const Report: React.FC = () => {
     };
   }, [sortedIncomeTx, sites]);
 
+  // 横棒グラフ用データ：選択された現場のカテゴリー別予算と実績
+  const chartData = useMemo((): ChartDataItem[] => {
+    // 現場が選択されていない場合は空配列
+    if (!filterSiteId) {
+      return [];
+    }
+
+    // 選択された現場のアクティブなカテゴリーを取得
+    const siteCategories = getActiveCategoriesBySite(filterSiteId);
+    
+    // カテゴリー別の実績を計算（フィルター条件を適用）
+    const categoryExpenses: Record<string, number> = {};
+    sortedExpenseTx.forEach(expense => {
+      if (expense.siteId === filterSiteId) {
+        categoryExpenses[expense.categoryId] = (categoryExpenses[expense.categoryId] || 0) + expense.amount;
+      }
+    });
+
+    // グラフ用データを作成
+    const data = siteCategories.map(category => {
+      const budgetAmount = Number(category.budgetAmount) || 0;
+      const actualAmount = Number(categoryExpenses[category.id]) || 0;
+      
+      return {
+        name: category.name,
+        categoryId: category.id,
+        budget: budgetAmount,
+        actual: actualAmount,
+        達成率: budgetAmount > 0 
+          ? Math.round((actualAmount / budgetAmount) * 100)
+          : 0
+      };
+    });
+
+    // 予算金額順で降順ソート
+    return data.sort((a, b) => b.budget - a.budget);
+  }, [filterSiteId, getActiveCategoriesBySite, sortedExpenseTx]);
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
@@ -461,6 +507,133 @@ const Report: React.FC = () => {
           </CardContent>
         </Card>
       </Box>
+
+      {/* カテゴリー別予算・実績グラフ */}
+      {filterSiteId && (
+        <Box sx={{ mb: 3 }}>
+          <Card>
+            <CardHeader 
+              title={`${sites.find(s => s.id === filterSiteId)?.name || '選択現場'} - カテゴリー別予算と実績`}
+              subheader={
+                chartData.length > 0
+                  ? `予算合計: ${formatCurrency(chartData.reduce((sum: number, item: any) => sum + item.budget, 0))} / 実績合計: ${formatCurrency(chartData.reduce((sum: number, item: any) => sum + item.actual, 0))}`
+                  : 'カテゴリーデータがありません'
+              }
+            />
+            <CardContent>
+              {chartData.length > 0 ? (
+                <>
+                  
+                  <Box sx={{ width: '100%', height: 500 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={chartData}
+                        margin={{
+                          top: 20,
+                          right: 30,
+                          left: 20,
+                          bottom: 80,
+                        }}
+                        barCategoryGap="20%"
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="name" 
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                          fontSize={11}
+                          interval={0}
+                        />
+                        <YAxis 
+                          tickFormatter={(value) => {
+                            if (value >= 1000000) {
+                              return `¥${(value / 1000000).toFixed(1)}M`;
+                            } else if (value >= 10000) {
+                              return `¥${(value / 10000).toFixed(0)}万`;
+                            } else if (value >= 1000) {
+                              return `¥${(value / 1000).toFixed(0)}K`;
+                            } else {
+                              return `¥${value}`;
+                            }
+                          }}
+                          domain={[0, 'dataMax']}
+                        />
+                        <Tooltip 
+                          formatter={(value, name) => [formatCurrency(Number(value)), name]}
+                          labelFormatter={(label) => `カテゴリー: ${label}`}
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <Paper sx={{ p: 2, boxShadow: 3 }}>
+                                  <Box sx={{ fontWeight: 'bold', mb: 1 }}>{label}</Box>
+                                  <Box>予算: {formatCurrency(data.budget)}</Box>
+                                  <Box>実績: {formatCurrency(data.actual)}</Box>
+                                  <Box sx={{ 
+                                    color: data.達成率 > 100 ? '#f44336' : '#4caf50',
+                                    fontWeight: 'bold'
+                                  }}>
+                                    達成率: {data.達成率}%
+                                  </Box>
+                                </Paper>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Legend />
+                        <Bar 
+                          dataKey="budget" 
+                          fill="#2196f3" 
+                          name="予算"
+                          radius={[2, 2, 0, 0]}
+                        />
+                        <Bar 
+                          dataKey="actual" 
+                          fill="#ff9800" 
+                          name="実績"
+                          radius={[2, 2, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Box>
+                </>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Box sx={{ fontSize: '1.1rem', mb: 2 }}>
+                    選択された現場にカテゴリーが設定されていません
+                  </Box>
+                  <Box sx={{ color: 'text.secondary' }}>
+                    カテゴリー管理画面で現場のカテゴリーを追加してください
+                  </Box>
+                </Box>
+              )}
+              
+              {/* 達成率サマリー */}
+              {chartData.length > 0 && (
+                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>カテゴリー別達成率</Box>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 1 }}>
+                    {chartData.map((item: ChartDataItem) => (
+                      <Box key={item.categoryId} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ fontSize: '0.9rem' }}>{item.name}</Box>
+                        <Box sx={{ 
+                          fontSize: '0.9rem', 
+                          fontWeight: 'bold',
+                          color: item.達成率 > 100 ? '#f44336' : '#4caf50'
+                        }}>
+                          {item.達成率}%
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Box>
+      )}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mt: 3 }}>
         <Card>
@@ -623,7 +796,7 @@ const Report: React.FC = () => {
             <Box sx={{ textAlign: 'center' }}>
               <img
                 src={selectedImages[currentImageIndex]}
-                alt={`Transaction image ${currentImageIndex + 1}`}
+                alt={`表示中 ${currentImageIndex + 1}`}
                 style={{
                   maxWidth: '100%',
                   maxHeight: '500px',

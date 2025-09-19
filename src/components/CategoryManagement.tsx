@@ -792,6 +792,76 @@ const CategoryManagement: React.FC = () => {
                                       書類登録済み ({(category.documentIds?.length || 0) + (category.documentUrls?.length || 0)}件)
                                     </Typography>
                                   </Box>
+                                  <Box display="flex" flexDirection="column" gap={0.5}>
+                                    {/* ローカルストレージの書類 */}
+                                    {category.documentIds && category.documentIds.slice(0, 3).map((documentId, index) => {
+                                      const documents = getAllDocumentsForEntity(category.id);
+                                      const documentInfo = documents.find(d => d.id === documentId);
+                                      if (!documentInfo) return null;
+                                      return (
+                                        <Typography
+                                          key={`category-local-doc-${index}`}
+                                          variant="caption"
+                                          sx={{
+                                            cursor: 'pointer',
+                                            textDecoration: 'underline',
+                                            color: 'primary.main',
+                                            '&:hover': { color: 'primary.dark' },
+                                            fontSize: '0.7rem'
+                                          }}
+                                          onClick={() => {
+                                            // ローカルストレージの書類をダウンロード
+                                            try {
+                                              const content = localStorage.getItem(`document_${category.id}_${documentId}`);
+                                              if (content) {
+                                                const link = document.createElement('a');
+                                                link.href = content;
+                                                link.download = documentInfo.fileName;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                              }
+                                            } catch (error) {
+                                              console.error('書類ダウンロードエラー:', error);
+                                            }
+                                          }}
+                                        >
+                                          📎 {documentInfo.fileName}
+                                        </Typography>
+                                      );
+                                    })}
+                                    
+                                    {/* Firebase Storageの書類 */}
+                                    {category.documentUrls && category.documentUrls.slice(0, 3).map((url, index) => {
+                                      const fileName = url.split('/').pop()?.split('_').slice(1).join('_') || `書類-${index + 1}`;
+                                      return (
+                                        <Typography
+                                          key={`category-firebase-doc-${index}`}
+                                          variant="caption"
+                                          sx={{
+                                            cursor: 'pointer',
+                                            textDecoration: 'underline',
+                                            color: 'primary.main',
+                                            '&:hover': { color: 'primary.dark' },
+                                            fontSize: '0.7rem'
+                                          }}
+                                          onClick={() => {
+                                            // Firebaseの書類を新しいタブで開く
+                                            window.open(url, '_blank');
+                                          }}
+                                        >
+                                          📎 {fileName}
+                                        </Typography>
+                                      );
+                                    })}
+                                    
+                                    {/* 追加書類がある場合の表示 */}
+                                    {((category.documentIds?.length || 0) + (category.documentUrls?.length || 0)) > 3 && (
+                                      <Typography variant="caption" color="text.secondary" fontSize="0.7rem">
+                                        +{((category.documentIds?.length || 0) + (category.documentUrls?.length || 0)) - 3}件の書類
+                                      </Typography>
+                                    )}
+                                  </Box>
                                 </Box>
                               )}
 

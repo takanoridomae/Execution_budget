@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TextField, Typography, TextFieldProps } from '@mui/material';
 import { formatStringAsNumber, isValidNumber, parseCommaSeparatedNumber } from '../../utils/numberUtils';
 
@@ -32,10 +32,19 @@ const NumericInput: React.FC<NumericInputProps> = ({
   maxValue,
   ...textFieldProps
 }) => {
+  // 内部表示用の状態（フォーマット済み）
+  const [displayValue, setDisplayValue] = useState('');
+  
+  // 外部のvalueが変更された時に表示値を更新
+  useEffect(() => {
+    const formatted = value ? formatStringAsNumber(value) : '';
+    setDisplayValue(formatted);
+  }, [value]);
+
   /**
-   * 入力値変更ハンドラー
+   * 入力値変更ハンドラー（メモ化で最適化）
    */
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = event.target.value;
     
     // カンマを除去して数値のみを取得
@@ -50,9 +59,15 @@ const NumericInput: React.FC<NumericInputProps> = ({
           return; // 最大値を超える場合は更新しない
         }
       }
+      
+      // 即座に表示値を更新（カーソル位置保持）
+      const formatted = cleanValue ? formatStringAsNumber(cleanValue) : '';
+      setDisplayValue(formatted);
+      
+      // 親コンポーネントに清潔な値を送信
       onChange(cleanValue);
     }
-  };
+  }, [maxValue, onChange]);
 
   /**
    * フォーカス時のIME制御
@@ -81,14 +96,12 @@ const NumericInput: React.FC<NumericInputProps> = ({
     }
   };
 
-  // 表示用の値（3桁区切り）
-  const displayValue = value ? formatStringAsNumber(value) : '';
-  
-  console.log('🔢 NumericInput レンダリング', {
-    inputValue: value,
-    displayValue: displayValue,
-    label: textFieldProps.label
-  });
+  // デバッグログ（パフォーマンス向上のため一時的に無効化）
+  // console.log('🔢 NumericInput レンダリング', {
+  //   inputValue: value,
+  //   displayValue: displayValue,
+  //   label: textFieldProps.label
+  // });
 
   return (
     <TextField

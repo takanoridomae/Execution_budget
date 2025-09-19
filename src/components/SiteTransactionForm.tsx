@@ -15,9 +15,12 @@ import {
   Select,
   MenuItem,
   InputLabel,
-  IconButton
+  IconButton,
+  Tabs,
+  Tab,
+  Badge
 } from '@mui/material';
-import { Save, Clear, CalendarToday, PhotoCamera, Delete } from '@mui/icons-material';
+import { Save, Clear, CalendarToday, PhotoCamera, Delete, Info, AttachFile, Image } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
@@ -30,6 +33,33 @@ import { saveImagesHybridBatch } from '../utils/imageUtils';
 import { saveDocumentsHybridBatch } from '../utils/documentUtils';
 import NumericInput from './common/NumericInput';
 import DocumentAttachment, { DocumentInfo } from './common/DocumentAttachment';
+
+// タブパネルコンポーネント（コンポーネント外で定義）
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`transaction-tabpanel-${index}`}
+      aria-labelledby={`transaction-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ py: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
 
 const SiteTransactionForm: React.FC = () => {
   const { addSiteTransaction, addSiteIncome, addSiteExpense, selectedDate, updateSiteIncome, updateSiteExpense } = useTransactions();
@@ -59,28 +89,57 @@ const SiteTransactionForm: React.FC = () => {
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
 
+  // タブ関連の状態
+  const [currentTab, setCurrentTab] = useState(0);
+
   // 選択された現場のカテゴリーを取得
   const availableCategories = siteId ? getActiveCategoriesBySite(siteId) : [];
-  
-  // デバッグ情報
-  console.log('🔍 SiteTransactionForm Debug:', {
-    activeSites: activeSites.length,
-    selectedSiteId,
-    siteId,
-    availableCategories: availableCategories.length,
-    categories: availableCategories
-  });
-  
-  // カテゴリーデータの詳細確認
-  if (availableCategories.length > 0) {
-    console.log('🔍 Category Details:', availableCategories.map(cat => ({
-      id: cat.id,
-      name: cat.name,
-      budgetAmount: cat.budgetAmount,
-      siteId: cat.siteId,
-      isActive: cat.isActive
-    })));
+
+  // タブ変更ハンドラー
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setCurrentTab(newValue);
+  };
+
+
+  // タブのa11y props
+  function a11yProps(index: number) {
+    return {
+      id: `transaction-tab-${index}`,
+      'aria-controls': `transaction-tabpanel-${index}`,
+    };
   }
+
+  // タブごとのエラー数を取得
+  const getTabErrors = () => {
+    const basicErrors = ['amount', 'siteId', 'categoryId', 'description'].filter(key => fieldErrors[key as keyof typeof fieldErrors]);
+    return {
+      basic: basicErrors.length,
+      photos: 0, // 写真にはバリデーションエラーなし
+      documents: 0 // 書類にはバリデーションエラーなし
+    };
+  };
+
+  const tabErrors = getTabErrors();
+  
+  // デバッグ情報（パフォーマンス向上のため一時的に無効化）
+  // console.log('🔍 SiteTransactionForm Debug:', {
+  //   activeSites: activeSites.length,
+  //   selectedSiteId,
+  //   siteId,
+  //   availableCategories: availableCategories.length,
+  //   categories: availableCategories
+  // });
+  
+  // // カテゴリーデータの詳細確認
+  // if (availableCategories.length > 0) {
+  //   console.log('🔍 Category Details:', availableCategories.map(cat => ({
+  //     id: cat.id,
+  //     name: cat.name,
+  //     budgetAmount: cat.budgetAmount,
+  //     siteId: cat.siteId,
+  //     isActive: cat.isActive
+  //   })));
+  // }
 
   // 現場変更時にカテゴリーをリセット
   useEffect(() => {
@@ -104,6 +163,7 @@ const SiteTransactionForm: React.FC = () => {
     setDocuments([]);
     // 現場は保持
     setFieldErrors({});
+    setCurrentTab(0); // タブを基本情報に戻す
   };
 
   // 画像ファイル選択処理
@@ -454,182 +514,240 @@ const SiteTransactionForm: React.FC = () => {
 
       <Divider sx={{ my: 2 }} />
 
-      {/* 取引タイプ */}
-      <FormControl component="fieldset" sx={{ mb: 2 }}>
-        <FormLabel component="legend">取引タイプ</FormLabel>
-        <RadioGroup
-          row
-          value={transactionType}
-          onChange={(e) => setTransactionType(e.target.value as TransactionType)}
+      {/* タブナビゲーション */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 0 }}>
+        <Tabs 
+          value={currentTab} 
+          onChange={handleTabChange} 
+          aria-label="取引入力タブ"
+          variant="fullWidth"
+          sx={{
+            minHeight: 48,
+            '& .MuiTab-root': {
+              minHeight: 48,
+              fontSize: { xs: '0.875rem', sm: '1rem' },
+              fontWeight: 'medium'
+            }
+          }}
         >
-          <FormControlLabel value="income" control={<Radio />} label="収入" />
-          <FormControlLabel value="expense" control={<Radio />} label="支出" />
-        </RadioGroup>
-      </FormControl>
-
-      {/* 現場選択 */}
-      <FormControl fullWidth sx={{ mb: 2 }} error={!!fieldErrors.siteId}>
-        <InputLabel>現場</InputLabel>
-        <Select
-          value={siteId}
-          onChange={(e) => setSiteId(e.target.value)}
-          label="現場"
-        >
-          {activeSites.map((site) => (
-            <MenuItem key={site.id} value={site.id}>
-              {site.name}
-            </MenuItem>
-          ))}
-        </Select>
-        {fieldErrors.siteId && (
-          <Typography variant="caption" color="error">
-            {fieldErrors.siteId}
-          </Typography>
-        )}
-      </FormControl>
-
-      {/* カテゴリー選択 */}
-      {transactionType === 'income' ? (
-        // 収入時は「売上」固定表示
-        <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel shrink>カテゴリー</InputLabel>
-          <TextField
-            value="売上"
-            label="カテゴリー"
-            disabled
-            fullWidth
-            variant="outlined"
-            sx={{ 
-              '& .MuiInputBase-input': { 
-                backgroundColor: '#f5f5f5',
-                color: 'text.primary'
-              } 
-            }}
-            helperText="収入のカテゴリーは自動的に「売上」になります"
+          <Tab 
+            icon={<Info />} 
+            label={
+              <Badge badgeContent={tabErrors.basic} color="error" invisible={tabErrors.basic === 0}>
+                基本情報
+              </Badge>
+            }
+            {...a11yProps(0)}
           />
-        </FormControl>
-      ) : (
-        // 支出時は通常のカテゴリー選択
-        <FormControl 
-          fullWidth 
-          sx={{ mb: 2 }} 
-          error={!!fieldErrors.categoryId}
-          disabled={!siteId}
-        >
-          <InputLabel id="category-select-label">カテゴリー</InputLabel>
-          <Select
-            labelId="category-select-label"
-            id="category-select"
-            value={categoryId}
-            onChange={(e) => {
-              console.log('🔍 Category selected:', e.target.value);
-              setCategoryId(e.target.value);
-            }}
-            label="カテゴリー"
-            displayEmpty
-            MenuProps={{
-              disablePortal: false,
-              PaperProps: {
-                style: {
-                  maxHeight: 300,
-                  zIndex: 10000,
-                },
-              },
-              anchorOrigin: {
-                vertical: 'bottom',
-                horizontal: 'left',
-              },
-              transformOrigin: {
-                vertical: 'top',
-                horizontal: 'left',
-              },
-            }}
+          <Tab 
+            icon={<Image />} 
+            label={
+              <Badge badgeContent={imageFiles.length} color="primary" invisible={imageFiles.length === 0}>
+                写真添付
+              </Badge>
+            }
+            {...a11yProps(1)}
+          />
+          <Tab 
+            icon={<AttachFile />} 
+            label={
+              <Badge badgeContent={documents.length} color="primary" invisible={documents.length === 0}>
+                書類添付
+              </Badge>
+            }
+            {...a11yProps(2)}
+          />
+        </Tabs>
+      </Box>
+
+      {/* タブパネル1: 基本情報 */}
+      <TabPanel value={currentTab} index={0}>
+        {/* 取引タイプ */}
+        <FormControl component="fieldset" sx={{ mb: 2 }}>
+          <FormLabel component="legend">取引タイプ</FormLabel>
+          <RadioGroup
+            row
+            value={transactionType}
+            onChange={(e) => setTransactionType(e.target.value as TransactionType)}
           >
-            <MenuItem value="" disabled>
-              <em>カテゴリーを選択してください</em>
-            </MenuItem>
-            {availableCategories.length > 0 ? (
-              availableCategories.map((category) => {
-                console.log('🔍 Rendering MenuItem:', {
-                  id: category.id,
-                  name: category.name,
-                  budgetAmount: category.budgetAmount
-                });
-                return (
-                  <MenuItem key={category.id} value={category.id}>
-                    {category.name} (¥{Number(category.budgetAmount || 0).toLocaleString()})
-                  </MenuItem>
-                );
-              })
-            ) : (
-              <MenuItem value="" disabled>
-                カテゴリーが見つかりません
+            <FormControlLabel value="income" control={<Radio />} label="収入" />
+            <FormControlLabel value="expense" control={<Radio />} label="支出" />
+          </RadioGroup>
+        </FormControl>
+
+        {/* 現場選択 */}
+        <FormControl fullWidth sx={{ mb: 2 }} error={!!fieldErrors.siteId}>
+          <InputLabel>現場</InputLabel>
+          <Select
+            value={siteId}
+            onChange={(e) => setSiteId(e.target.value)}
+            label="現場"
+          >
+            {activeSites.map((site) => (
+              <MenuItem key={site.id} value={site.id}>
+                {site.name}
               </MenuItem>
-            )}
+            ))}
           </Select>
-          {fieldErrors.categoryId && (
+          {fieldErrors.siteId && (
             <Typography variant="caption" color="error">
-              {fieldErrors.categoryId}
-            </Typography>
-          )}
-          {siteId && availableCategories.length === 0 && (
-            <Typography variant="caption" color="warning.main">
-              この現場にはカテゴリーが登録されていません
+              {fieldErrors.siteId}
             </Typography>
           )}
         </FormControl>
-      )}
 
-      {/* 金額 */}
-      <NumericInput
-        label="金額"
-        value={amount}
-        onChange={setAmount}
-        error={!!fieldErrors.amount}
-        helperText={fieldErrors.amount}
-        fullWidth
-        sx={{ mb: 2 }}
-        required
-      />
+        {/* カテゴリー選択 */}
+        {transactionType === 'income' ? (
+          // 収入時は「売上」固定表示
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel shrink>カテゴリー</InputLabel>
+            <TextField
+              value="売上"
+              label="カテゴリー"
+              disabled
+              fullWidth
+              variant="outlined"
+              sx={{ 
+                '& .MuiInputBase-input': { 
+                  backgroundColor: '#f5f5f5',
+                  color: 'text.primary'
+                } 
+              }}
+              helperText="収入のカテゴリーは自動的に「売上」になります"
+            />
+          </FormControl>
+        ) : (
+          // 支出時は通常のカテゴリー選択
+          <FormControl 
+            fullWidth 
+            sx={{ mb: 2 }} 
+            error={!!fieldErrors.categoryId}
+            disabled={!siteId}
+          >
+            <InputLabel id="category-select-label">カテゴリー</InputLabel>
+            <Select
+              labelId="category-select-label"
+              id="category-select"
+              value={categoryId}
+              onChange={(e) => {
+                // console.log('🔍 Category selected:', e.target.value);
+                setCategoryId(e.target.value);
+              }}
+              label="カテゴリー"
+              displayEmpty
+              MenuProps={{
+                disablePortal: false,
+                PaperProps: {
+                  style: {
+                    maxHeight: 300,
+                    zIndex: 10000,
+                  },
+                },
+                anchorOrigin: {
+                  vertical: 'bottom',
+                  horizontal: 'left',
+                },
+                transformOrigin: {
+                  vertical: 'top',
+                  horizontal: 'left',
+                },
+              }}
+            >
+              <MenuItem value="" disabled>
+                <em>カテゴリーを選択してください</em>
+              </MenuItem>
+              {availableCategories.length > 0 ? (
+                availableCategories.map((category) => {
+                  // console.log('🔍 Rendering MenuItem:', {
+                  //   id: category.id,
+                  //   name: category.name,
+                  //   budgetAmount: category.budgetAmount
+                  // });
+                  return (
+                    <MenuItem key={category.id} value={category.id}>
+                      {category.name} (¥{Number(category.budgetAmount || 0).toLocaleString()})
+                    </MenuItem>
+                  );
+                })
+              ) : (
+                <MenuItem value="" disabled>
+                  カテゴリーが見つかりません
+                </MenuItem>
+              )}
+            </Select>
+            {fieldErrors.categoryId && (
+              <Typography variant="caption" color="error">
+                {fieldErrors.categoryId}
+              </Typography>
+            )}
+            {siteId && availableCategories.length === 0 && (
+              <Typography variant="caption" color="warning.main">
+                この現場にはカテゴリーが登録されていません
+              </Typography>
+            )}
+          </FormControl>
+        )}
 
-      {/* 内容 */}
-      <TextField
-        label="内容"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        error={!!fieldErrors.description}
-        helperText={fieldErrors.description}
-        fullWidth
-        multiline
-        rows={3}
-        sx={{ mb: 2 }}
-        required
-        placeholder="取引の詳細を入力..."
-      />
+        {/* 金額 */}
+        <NumericInput
+          label="金額"
+          value={amount}
+          onChange={setAmount}
+          error={!!fieldErrors.amount}
+          helperText={fieldErrors.amount}
+          fullWidth
+          sx={{ mb: 2 }}
+          required
+        />
 
-      {/* 画像アップロード */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="subtitle1" gutterBottom>
+        {/* 内容 */}
+        <TextField
+          label="内容"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          error={!!fieldErrors.description}
+          helperText={fieldErrors.description}
+          fullWidth
+          multiline
+          rows={3}
+          sx={{ mb: 2 }}
+          required
+          placeholder="取引の詳細を入力..."
+        />
+      </TabPanel>
+
+      {/* タブパネル2: 写真添付 */}
+      <TabPanel value={currentTab} index={1}>
+        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <PhotoCamera color="primary" />
           写真添付
         </Typography>
         
         {/* 画像プレビュー */}
         {imagePreviews.length > 0 && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" color="textSecondary" gutterBottom>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body1" color="textSecondary" gutterBottom>
               選択された画像 ({imagePreviews.length}/5枚)
             </Typography>
-            <Box display="flex" gap={1} flexWrap="wrap">
+            <Box 
+              display="grid" 
+              gridTemplateColumns={{
+                xs: 'repeat(2, 1fr)',
+                sm: 'repeat(3, 1fr)',
+                md: 'repeat(4, 1fr)'
+              }}
+              gap={2}
+            >
               {imagePreviews.map((src, index) => (
-                <Box key={index} position="relative" display="inline-block">
+                <Box key={index} position="relative">
                   <img
                     src={src}
                     alt={`upload-${index}`}
                     style={{
-                      width: 80,
-                      height: 80,
+                      width: '100%',
+                      height: 120,
                       objectFit: 'cover',
-                      borderRadius: 4,
+                      borderRadius: 8,
                       border: '1px solid #ddd'
                     }}
                   />
@@ -642,7 +760,8 @@ const SiteTransactionForm: React.FC = () => {
                       right: -8,
                       backgroundColor: 'error.main',
                       color: 'white',
-                      '&:hover': { backgroundColor: 'error.dark' }
+                      '&:hover': { backgroundColor: 'error.dark' },
+                      boxShadow: 2
                     }}
                   >
                     <Delete fontSize="small" />
@@ -653,65 +772,144 @@ const SiteTransactionForm: React.FC = () => {
           </Box>
         )}
 
-        {/* ファイル選択ボタン */}
-        <Button
-          variant="outlined"
-          component="label"
-          startIcon={<PhotoCamera />}
-          disabled={imageFiles.length >= 5}
-          sx={{ mb: 1 }}
+        {/* ファイル選択エリア */}
+        <Box
+          sx={{
+            border: '2px dashed',
+            borderColor: imageFiles.length >= 5 ? 'grey.300' : 'primary.main',
+            borderRadius: 2,
+            p: 4,
+            textAlign: 'center',
+            backgroundColor: imageFiles.length >= 5 ? 'grey.50' : 'primary.50',
+            transition: 'all 0.2s ease',
+            mb: 2
+          }}
         >
-          写真を選択
-          <input
-            type="file"
-            accept="image/*" 
-            multiple
-            hidden
-            onChange={(e) => handleImageSelect(e.target.files)}
-          />
-        </Button>
-        
-        {imageFiles.length >= 5 && (
-          <Typography variant="caption" color="error" display="block">
-            画像は最大5枚まで選択できます
+          <PhotoCamera sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+          <Typography variant="h6" gutterBottom>
+            {imageFiles.length === 0 ? '写真をアップロード' : '追加の写真をアップロード'}
           </Typography>
-        )}
-        
-        <Typography variant="caption" color="textSecondary" display="block">
-          写真は自動的に圧縮されます。大きなファイルも安心してアップロードできます。
+          
+          <Button
+            variant="contained"
+            component="label"
+            startIcon={<PhotoCamera />}
+            disabled={imageFiles.length >= 5}
+            size="large"
+            sx={{ mb: 2 }}
+          >
+            写真を選択
+            <input
+              type="file"
+              accept="image/*" 
+              multiple
+              hidden
+              onChange={(e) => handleImageSelect(e.target.files)}
+            />
+          </Button>
+          
+          {imageFiles.length >= 5 ? (
+            <Typography variant="body2" color="error">
+              画像は最大5枚まで選択できます
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="textSecondary">
+              写真は自動的に圧縮されます。大きなファイルも安心してアップロードできます。
+            </Typography>
+          )}
+        </Box>
+      </TabPanel>
+
+      {/* タブパネル3: 書類添付 */}
+      <TabPanel value={currentTab} index={2}>
+        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AttachFile color="primary" />
+          書類添付
         </Typography>
-      </Box>
+        
+        <DocumentAttachment
+          entityId="site-transaction-form"
+          documents={documents}
+          onDocumentsChange={handleDocumentsChange}
+          onFilesSelect={handleDocumentFilesSelect}
+          onDocumentRemove={handleDocumentRemove}
+          maxFiles={5}
+          label="書類をアップロード（任意）"
+          helperText="レシート、請求書、契約書などの書類をアップロードできます（最大10MB）"
+        />
+      </TabPanel>
 
-      {/* 書類添付 */}
-      <DocumentAttachment
-        entityId="site-transaction-form"
-        documents={documents}
-        onDocumentsChange={handleDocumentsChange}
-        onFilesSelect={handleDocumentFilesSelect}
-        onDocumentRemove={handleDocumentRemove}
-        maxFiles={5}
-        label="書類を添付（任意）"
-        helperText="レシート、請求書、契約書などの書類をアップロードできます（最大10MB）"
-      />
+      {/* タブナビゲーションとアクションボタン */}
+      <Box 
+        sx={{ 
+          mt: 3,
+          p: 2,
+          backgroundColor: 'grey.50',
+          borderRadius: 1,
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 1
+        }}
+      >
+        {/* タブナビゲーションボタン（モバイル向け） */}
+        <Box 
+          display="flex" 
+          justifyContent="space-between" 
+          alignItems="center"
+          sx={{ mb: 2, display: { xs: 'flex', sm: 'none' } }}
+        >
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setCurrentTab(Math.max(0, currentTab - 1))}
+            disabled={currentTab === 0}
+          >
+            前へ
+          </Button>
+          <Typography variant="body2" color="textSecondary">
+            {currentTab + 1} / 3
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setCurrentTab(Math.min(2, currentTab + 1))}
+            disabled={currentTab === 2}
+          >
+            次へ
+          </Button>
+        </Box>
 
-      {/* ボタン */}
-      <Box display="flex" gap={2} justifyContent="flex-end">
-        <Button
-          variant="outlined"
-          startIcon={<Clear />}
-          onClick={clearForm}
-          disabled={loading}
+        {/* アクションボタン */}
+        <Box 
+          display="flex" 
+          gap={2} 
+          justifyContent="flex-end"
+          flexDirection={{ xs: 'column', sm: 'row' }}
         >
-          クリア
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<Save />}
-          onClick={handleSubmit}
-          disabled={loading || activeSites.length === 0}
-        >
-          {loading ? '追加中...' : '追加'}
-        </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Clear />}
+            onClick={clearForm}
+            disabled={loading}
+            sx={{
+              width: { xs: '100%', sm: 'auto' }
+            }}
+          >
+            クリア
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Save />}
+            onClick={handleSubmit}
+            disabled={loading || activeSites.length === 0}
+            size="large"
+            sx={{
+              width: { xs: '100%', sm: 'auto' }
+            }}
+          >
+            {loading ? '追加中...' : '追加'}
+          </Button>
+        </Box>
       </Box>
 
       {activeSites.length === 0 && (

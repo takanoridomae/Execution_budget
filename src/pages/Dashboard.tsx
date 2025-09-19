@@ -6,51 +6,143 @@ import {
   Grid, 
   Card, 
   CardContent, 
-  Chip, 
   Button,
   Alert,
-  Divider
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import { 
   Business as BusinessIcon,
   Category as CategoryIcon,
   Assessment as AssessmentIcon,
-  Image as ImageIcon
+  Close as CloseIcon,
+  Storage as StorageIcon,
+  AttachFile as AttachFileIcon
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
-import { useCategories } from '../contexts/CategoryContext';
-import { useTransactions } from '../contexts/TransactionContext';
 import SiteManagement from '../components/SiteManagement';
 import CategoryManagement from '../components/CategoryManagement';
+import StorageIntegrityChecker from '../components/StorageIntegrityChecker';
+import StatCard from '../components/common/StatCard';
+import SiteInfoCard from '../components/common/SiteInfoCard';
+import CategoryList from '../components/common/CategoryList';
+import SiteGrid from '../components/common/SiteGrid';
+import { useDashboardStats } from '../hooks/useDashboardStats';
+import { useModalManager } from '../hooks/useModalManager';
 import { getImageFromLocalStorage } from '../utils/imageUtils';
-import { calculateTotalCategoryExpenses } from '../utils/transactionCalculations';
+import { getAllDocumentsForEntity } from '../utils/documentUtils';
 
 const Dashboard: React.FC = () => {
-  const { sites, activeSites, selectedSiteId, setSelectedSiteId } = useSites();
-  const { getTotalBudgetBySite, getCategoriesBySite } = useCategories();
-  const { siteExpenses, getSiteIncomesBySite, getSiteExpensesBySite } = useTransactions();
-  
+  const { setSelectedSiteId } = useSites();
   const [showSiteManagement, setShowSiteManagement] = useState(false);
   const [showCategoryManagement, setShowCategoryManagement] = useState(false);
-
-  // 選択された現場の情報
-  const selectedSite = selectedSiteId ? sites.find(s => s.id === selectedSiteId) : null;
-  const selectedSiteCategories = selectedSiteId ? getCategoriesBySite(selectedSiteId) : [];
-  const selectedSiteBudget = selectedSiteId ? getTotalBudgetBySite(selectedSiteId) : 0;
-  const selectedSiteIncomeAmount = selectedSiteId ? getSiteIncomesBySite(selectedSiteId).reduce((sum, income) => sum + income.amount, 0) : 0;
-  const selectedSiteExpenseAmount = selectedSiteId ? getSiteExpensesBySite(selectedSiteId).reduce((sum, expense) => sum + expense.amount, 0) : 0;
-  const budgetMinusExpense = selectedSiteBudget - selectedSiteExpenseAmount;
-  const incomeMinusExpense = selectedSiteIncomeAmount - selectedSiteExpenseAmount;
-
-  // 全体の統計
-  const totalSites = activeSites.length;
-  const totalBudget = activeSites.reduce((sum, site) => sum + getTotalBudgetBySite(site.id), 0);
+  const [showIntegrityChecker, setShowIntegrityChecker] = useState(false);
   
-  // 稼働中現場のみの支出を計算
-  const activeSiteIds = activeSites.map(site => site.id);
-  const activeSiteExpenses = siteExpenses.filter(expense => activeSiteIds.includes(expense.siteId));
-  const totalExpenseCount = activeSiteExpenses.length;
-  const totalExpenseAmount = activeSiteExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  // 統計データを取得
+  const dashboardStats = useDashboardStats();
+  
+  // モーダル管理
+  const {
+    imageModalOpen,
+    selectedImage,
+    handleImageClick,
+    handleImageModalClose,
+    allItemsModalOpen,
+    allItemsData,
+    handleShowAllItems,
+    handleAllItemsModalClose
+  } = useModalManager();
+
+  // アイテム表示ハンドラー（カテゴリー用）
+  const handleShowCategoryItems = (type: 'photos' | 'documents', categoryName: string, category: any) => {
+    const items: any[] = [];
+    
+    if (type === 'photos') {
+      // ローカルストレージの画像
+      if (category.imageIds) {
+        category.imageIds.forEach((imageId: string, index: number) => {
+          const imageData = getImageFromLocalStorage(category.id, imageId);
+          if (imageData) {
+            items.push({
+              type: 'local',
+              src: imageData,
+              alt: `カテゴリー画像-${index}`,
+              index
+            });
+          }
+        });
+      }
+      
+      // Firebase Storageの画像
+      if (category.imageUrls) {
+        category.imageUrls.forEach((url: string, index: number) => {
+          items.push({
+            type: 'firebase',
+            src: url,
+            alt: `カテゴリー画像-${index}`,
+            index
+          });
+        });
+      }
+    } else {
+      // ローカルストレージの書類
+      if (category.documentIds) {
+        category.documentIds.forEach((documentId: string, index: number) => {
+          const documents = getAllDocumentsForEntity(category.id);
+          const documentInfo = documents.find(d => d.id === documentId);
+          if (documentInfo) {
+            items.push({
+              type: 'local',
+              id: documentId,
+              name: documentInfo.fileName,
+              categoryId: category.id,
+              index
+            });
+          }
+        });
+      }
+      
+      // Firebase Storageの書類
+      if (category.documentUrls) {
+        category.documentUrls.forEach((url: string, index: number) => {
+          const fileName = url.split('/').pop()?.split('_').slice(1).join('_') || `書類-${index + 1}`;
+          items.push({
+            type: 'firebase',
+            url,
+            name: fileName,
+            index
+          });
+        });
+      }
+    }
+    
+    handleShowAllItems(type, categoryName, items);
+  };
+
+  // dashboardStatsから必要なデータを分解代入
+  const {
+    selectedSite,
+    selectedSiteCategories,
+    selectedSiteBudget,
+    selectedSiteIncomeAmount,
+    selectedSiteExpenseAmount,
+    budgetMinusExpense,
+    incomeMinusExpense,
+    totalSites,
+    totalBudget,
+    totalExpenseCount,
+    totalExpenseAmount,
+    activeSites,
+    getTotalBudgetBySite,
+    getCategoriesBySite,
+    getSiteExpensesBySite
+  } = dashboardStats;
 
   if (showSiteManagement) {
     return (
@@ -109,56 +201,38 @@ const Dashboard: React.FC = () => {
       {/* 全体統計 */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3} {...({} as any)}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <BusinessIcon color="primary" />
-                <Typography variant="h6">稼働現場数</Typography>
-              </Box>
-              <Typography variant="h3" color="primary">
-                {totalSites}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="稼働現場数"
+            value={totalSites}
+            icon={BusinessIcon}
+            color="primary"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3} {...({} as any)}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <AssessmentIcon color="secondary" />
-                <Typography variant="h6">総予算</Typography>
-              </Box>
-              <Typography variant="h3" color="secondary">
-                ¥{totalBudget.toLocaleString()}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="総予算"
+            value={totalBudget}
+            icon={AssessmentIcon}
+            color="secondary"
+            formatAsNumber={true}
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3} {...({} as any)}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <CategoryIcon color="error" />
-                <Typography variant="h6">支出件数</Typography>
-              </Box>
-              <Typography variant="h3" color="error.main">
-                {totalExpenseCount}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="支出件数"
+            value={totalExpenseCount}
+            icon={CategoryIcon}
+            color="error"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3} {...({} as any)}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <CategoryIcon color="warning" />
-                <Typography variant="h6">総支出金額</Typography>
-              </Box>
-              <Typography variant="h3" color="warning.main">
-                ¥{totalExpenseAmount.toLocaleString()}
-              </Typography>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="総支出金額"
+            value={totalExpenseAmount}
+            icon={CategoryIcon}
+            color="warning"
+            formatAsNumber={true}
+          />
         </Grid>
       </Grid>
 
@@ -182,6 +256,14 @@ const Dashboard: React.FC = () => {
           >
             カテゴリー管理
           </Button>
+          <Button
+            variant="outlined"
+            startIcon={<StorageIcon />}
+            onClick={() => setShowIntegrityChecker(true)}
+            color="info"
+          >
+            ストレージ整合性確認
+          </Button>
         </Box>
       </Box>
 
@@ -202,172 +284,26 @@ const Dashboard: React.FC = () => {
             <CardContent>
               <Grid container spacing={2}>
                 <Grid item xs={12} md={6} {...({} as any)}>
-                  <Typography variant="h6" color="primary" gutterBottom>
-                    現場情報
-                  </Typography>
-                  {selectedSite.description && (
-                    <Typography variant="body2" sx={{ mb: 1 }}>
-                      {selectedSite.description}
-                    </Typography>
-                  )}
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>予算合計:</strong> ¥{selectedSiteBudget.toLocaleString()}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>カテゴリー数:</strong> {selectedSiteCategories.length}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>実績入金:</strong> ¥{selectedSiteIncomeAmount.toLocaleString()}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>実績支出:</strong> ¥{selectedSiteExpenseAmount.toLocaleString()}
-                  </Typography>
-                  <Typography variant="body2" sx={{ 
-                    color: budgetMinusExpense >= 0 ? 'success.main' : 'error.main',
-                    fontWeight: 'bold',
-                    mb: 1
-                  }}>
-                    <strong>予算残高:</strong> {budgetMinusExpense >= 0 ? "+" : ""}¥{budgetMinusExpense.toLocaleString()}
-                  </Typography>
-                  <Typography variant="body2" sx={{ 
-                    color: incomeMinusExpense >= 0 ? 'success.main' : 'error.main',
-                    fontWeight: 'bold'
-                  }}>
-                    <strong>実績利益:</strong> {incomeMinusExpense >= 0 ? "+" : ""}¥{incomeMinusExpense.toLocaleString()}
-                  </Typography>
-                  {/* 写真表示セクション */}
-                  {((selectedSite.imageIds && selectedSite.imageIds.length > 0) || 
-                    (selectedSite.imageUrls && selectedSite.imageUrls.length > 0)) && (
-                    <>
-                      <Divider sx={{ my: 2 }} />
-                      <Typography variant="body2" color="primary" gutterBottom>
-                        📷 現場写真
-                      </Typography>
-                      <Box display="flex" gap={1} flexWrap="wrap" mb={2}>
-                        {/* ローカルストレージの画像 */}
-                        {selectedSite.imageIds && selectedSite.imageIds.slice(0, 4).map((imageId, index) => {
-                          const imageData = getImageFromLocalStorage(selectedSite.id, imageId);
-                          if (!imageData) return null;
-                          return (
-                            <img
-                              key={`dashboard-site-local-${index}`}
-                              src={imageData}
-                              alt={`現場画像-${index}`}
-                              style={{
-                                width: 60,
-                                height: 60,
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                border: '2px solid #ddd'
-                              }}
-                            />
-                          );
-                        })}
-                        
-                        {/* Firebase Storageの画像 */}
-                        {selectedSite.imageUrls && selectedSite.imageUrls.slice(0, 4).map((url, index) => (
-                          <img
-                            key={`dashboard-site-firebase-${index}`}
-                            src={url}
-                            alt={`現場画像-${index}`}
-                            style={{
-                              width: 60,
-                              height: 60,
-                              objectFit: 'cover',
-                              borderRadius: 8,
-                              border: '2px solid #ddd'
-                            }}
-                          />
-                        ))}
-                        
-                        {/* 追加画像がある場合の表示 */}
-                        {((selectedSite.imageIds?.length || 0) + (selectedSite.imageUrls?.length || 0)) > 4 && (
-                          <Box
-                            sx={{
-                              width: 60,
-                              height: 60,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: 'grey.200',
-                              borderRadius: 2,
-                              border: '2px solid #ddd'
-                            }}
-                          >
-                            <Typography variant="caption" color="text.secondary" fontSize="12px">
-                              +{((selectedSite.imageIds?.length || 0) + (selectedSite.imageUrls?.length || 0)) - 4}
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    </>
-                  )}
-                  
-                  {selectedSite.comment && (
-                    <>
-                      <Divider sx={{ my: 2 }} />
-                      <Typography variant="body2" color="text.secondary">
-                        💬 {selectedSite.comment}
-                      </Typography>
-                    </>
-                  )}
+                  <SiteInfoCard
+                    site={selectedSite}
+                    budget={selectedSiteBudget}
+                    categoriesCount={selectedSiteCategories.length}
+                    incomeAmount={selectedSiteIncomeAmount}
+                    expenseAmount={selectedSiteExpenseAmount}
+                    onImageClick={handleImageClick}
+                  />
                 </Grid>
                 <Grid item xs={12} md={6} {...({} as any)}>
                   <Typography variant="h6" color="primary" gutterBottom>
                     カテゴリー一覧
                   </Typography>
-                  {selectedSiteCategories.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      カテゴリーが登録されていません
-                    </Typography>
-                  ) : (
-                    <Box display="flex" flexDirection="column" gap={1}>
-                      {selectedSiteCategories.map((category) => {
-                        const categoryExpenses = calculateTotalCategoryExpenses(siteExpenses, category.id, selectedSiteId || undefined);
-                        return (
-                          <Box key={category.id} display="flex" justifyContent="space-between" alignItems="center">
-                            <Box>
-                              <Typography variant="body2" fontWeight="bold">
-                                {category.name}
-                              </Typography>
-                              {category.description && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {category.description}
-                                </Typography>
-                              )}
-                              <Typography variant="caption" display="block" color="error.main">
-                                実績支出: ¥{categoryExpenses.toLocaleString()}
-                              </Typography>
-                            </Box>
-                            <Box display="flex" alignItems="center" gap={1}>
-                              <Chip 
-                                label={`¥${category.budgetAmount.toLocaleString()}`}
-                                size="small"
-                                color={category.isActive ? 'primary' : 'default'}
-                              />
-                              <Box sx={{ 
-                                minWidth: '100px',
-                                textAlign: 'right'
-                              }}>
-                                <Typography variant="caption" sx={{ 
-                                  color: 'text.secondary',
-                                  display: 'block'
-                                }}>
-                                  予算残
-                                </Typography>
-                                <Typography variant="body2" sx={{ 
-                                  color: (category.budgetAmount - categoryExpenses) >= 0 ? 'success.main' : 'error.main',
-                                  fontWeight: 'bold'
-                                }}>
-                                  {(category.budgetAmount - categoryExpenses) >= 0 ? "+" : ""}¥{(category.budgetAmount - categoryExpenses).toLocaleString()}
-                                </Typography>
-                              </Box>
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  )}
+                  <CategoryList
+                    categories={selectedSiteCategories}
+                    siteExpenses={dashboardStats.sites.find(s => s.id === selectedSite.id) ? getSiteExpensesBySite(selectedSite.id) : []}
+                    selectedSiteId={selectedSite.id}
+                    onImageClick={handleImageClick}
+                    onShowAllItems={handleShowCategoryItems}
+                  />
                 </Grid>
               </Grid>
             </CardContent>
@@ -385,139 +321,159 @@ const Dashboard: React.FC = () => {
             <Button
               size="small"
               onClick={() => setSelectedSiteId(null)}
-              disabled={!selectedSiteId}
+              disabled={!dashboardStats.selectedSite}
             >
               選択をクリア
             </Button>
           </Box>
-          <Grid container spacing={2}>
-            {activeSites.map((site) => {
-              const budget = getTotalBudgetBySite(site.id);
-              const categories = getCategoriesBySite(site.id);
-              const siteExpenseAmount = getSiteExpensesBySite(site.id).reduce((sum, expense) => sum + expense.amount, 0);
-              const isSelected = selectedSiteId === site.id;
-              
-              return (
-                <Grid key={site.id} item xs={12} sm={6} md={4} {...({} as any)}>
-                  <Card 
-                    elevation={isSelected ? 8 : 2}
-                    sx={{ 
-                      cursor: 'pointer',
-                      border: isSelected ? 2 : 0,
-                      borderColor: 'primary.main',
-                      '&:hover': { elevation: 4 }
-                    }}
-                    onClick={() => setSelectedSiteId(site.id)}
-                  >
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom noWrap>
-                        {site.name}
+          <SiteGrid
+            sites={activeSites}
+            selectedSiteId={dashboardStats.selectedSite?.id || null}
+            onSiteSelect={setSelectedSiteId}
+            onImageClick={(src, alt) => handleImageClick(src, alt)}
+            getBudgetBySite={getTotalBudgetBySite}
+            getCategoriesBySite={getCategoriesBySite}
+            getExpensesBySite={getSiteExpensesBySite}
+          />
+        </Box>
+      )}
+
+      {/* 画像拡大表示モーダル */}
+      <Dialog
+        open={imageModalOpen}
+        onClose={handleImageModalClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">
+              {selectedImage?.alt || '現場画像'}
+            </Typography>
+            <IconButton onClick={handleImageModalClose}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedImage && (
+            <Box display="flex" justifyContent="center" alignItems="center">
+              <img
+                src={selectedImage.src}
+                alt={selectedImage.alt}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  objectFit: 'contain',
+                  borderRadius: 8
+                }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* すべての写真・書類表示モーダル */}
+      <Dialog
+        open={allItemsModalOpen}
+        onClose={handleAllItemsModalClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">
+              {allItemsData?.categoryName} - すべての{allItemsData?.type === 'photos' ? '写真' : '書類'}
+            </Typography>
+            <IconButton onClick={handleAllItemsModalClose}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {allItemsData?.type === 'photos' ? (
+            // 写真の表示
+            <Grid container spacing={2}>
+              {allItemsData.items.map((item, index) => (
+                <Grid item xs={12} sm={6} md={4} key={`photo-${index}`} {...({} as any)}>
+                  <Card>
+                    <CardContent sx={{ p: 1 }}>
+                      <img
+                        src={item.src}
+                        alt={item.alt}
+                        style={{
+                          width: '100%',
+                          height: 200,
+                          objectFit: 'cover',
+                          borderRadius: 4,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => handleImageClick(item.src, item.alt)}
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        {item.type === 'local' ? 'ローカル' : 'Firebase'} - {item.alt}
                       </Typography>
-                      {site.description && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          {site.description}
-                        </Typography>
-                      )}
-                      <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                        <Box>
-                          <Typography variant="body2">
-                            予算: ¥{budget.toLocaleString()}
-                          </Typography>
-                          <Typography variant="body2" sx={{ 
-                            color: (budget - siteExpenseAmount) >= 0 ? 'success.main' : 'error.main',
-                            fontWeight: 'bold',
-                            fontSize: '0.8rem'
-                          }}>
-                            残金: {(budget - siteExpenseAmount) >= 0 ? "+" : ""}¥{(budget - siteExpenseAmount).toLocaleString()}
-                          </Typography>
-                        </Box>
-                        <Chip 
-                          label={isSelected ? '選択中' : '選択'} 
-                          color={isSelected ? 'primary' : 'default'}
-                          size="small"
-                        />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary">
-                        カテゴリー: {categories.length} | 支出: ¥{siteExpenseAmount.toLocaleString()}
-                      </Typography>
-                      
-                      {/* 写真表示セクション */}
-                      {((site.imageIds && site.imageIds.length > 0) || 
-                        (site.imageUrls && site.imageUrls.length > 0)) && (
-                        <Box mt={1}>
-                          <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
-                            <ImageIcon fontSize="small" color="action" />
-                            <Typography variant="caption" color="text.secondary">
-                              写真登録済み
-                            </Typography>
-                          </Box>
-                          <Box display="flex" gap={0.5} flexWrap="wrap">
-                            {/* ローカルストレージの画像 */}
-                            {site.imageIds && site.imageIds.slice(0, 3).map((imageId, index) => {
-                              const imageData = getImageFromLocalStorage(site.id, imageId);
-                              if (!imageData) return null;
-                              return (
-                                <img
-                                  key={`dashboard-list-local-${index}`}
-                                  src={imageData}
-                                  alt={`現場画像-${index}`}
-                                  style={{
-                                    width: 32,
-                                    height: 32,
-                                    objectFit: 'cover',
-                                    borderRadius: 4,
-                                    border: '1px solid #ddd'
-                                  }}
-                                />
-                              );
-                            })}
-                            
-                            {/* Firebase Storageの画像 */}
-                            {site.imageUrls && site.imageUrls.slice(0, 3).map((url, index) => (
-                              <img
-                                key={`dashboard-list-firebase-${index}`}
-                                src={url}
-                                alt={`現場画像-${index}`}
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  objectFit: 'cover',
-                                  borderRadius: 4,
-                                  border: '1px solid #ddd'
-                                }}
-                              />
-                            ))}
-                            
-                            {/* 追加画像がある場合の表示 */}
-                            {((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) > 3 && (
-                              <Box
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  backgroundColor: 'grey.200',
-                                  borderRadius: 1,
-                                  border: '1px solid #ddd'
-                                }}
-                              >
-                                <Typography variant="caption" color="text.secondary" fontSize="10px">
-                                  +{((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) - 3}
-                                </Typography>
-                              </Box>
-                            )}
-                          </Box>
-                        </Box>
-                      )}
                     </CardContent>
                   </Card>
                 </Grid>
-              );
-            })}
-          </Grid>
-        </Box>
-      )}
+              ))}
+            </Grid>
+          ) : (
+            // 書類の表示
+            <List>
+              {allItemsData?.items.map((item, index) => (
+                <ListItem 
+                  key={`document-${index}`}
+                  sx={{ 
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: 'grey.100'
+                    },
+                    border: '1px solid #e0e0e0',
+                    borderRadius: 1,
+                    mb: 1
+                  }}
+                  onClick={() => {
+                    if (item.type === 'local') {
+                      // ローカルストレージの書類をダウンロード
+                      try {
+                        const content = localStorage.getItem(`document_${item.categoryId}_${item.id}`);
+                        if (content) {
+                          const link = document.createElement('a');
+                          link.href = content;
+                          link.download = item.name;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }
+                      } catch (error) {
+                        console.error('書類ダウンロードエラー:', error);
+                      }
+                    } else {
+                      // Firebase Storageの書類を新しいタブで開く
+                      window.open(item.url, '_blank');
+                    }
+                  }}
+                >
+                  <ListItemIcon>
+                    <AttachFileIcon />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={item.name}
+                    secondary={item.type === 'local' ? 'ローカルストレージ' : 'Firebase Storage'}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ストレージ整合性チェックモーダル */}
+      <StorageIntegrityChecker
+        open={showIntegrityChecker}
+        onClose={() => setShowIntegrityChecker(false)}
+      />
     </Container>
   );
 };

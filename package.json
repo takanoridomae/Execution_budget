@@ -25,7 +25,7 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "cross-env HOST=0.0.0.0 PORT=3000 DANGEROUSLY_DISABLE_HOST_CHECK=true react-scripts start",
+    "start": "cross-env NODE_OPTIONS=--max_old_space_size=4096 HOST=0.0.0.0 PORT=3000 DANGEROUSLY_DISABLE_HOST_CHECK=true react-scripts start",
     "build": "react-scripts build",
     "build:local": "cross-env REACT_APP_LOCAL_NETWORK=true GENERATE_SOURCEMAP=false react-scripts build",
     "serve": "npx serve -s build -l 3000 -H 0.0.0.0",
