@@ -252,7 +252,11 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
         hasImageUrls: !!updates.imageUrls,
         imageUrlsCount: updates.imageUrls?.length || 0,
         hasImageIds: !!updates.imageIds,
-        imageIdsCount: updates.imageIds?.length || 0
+        imageIdsCount: updates.imageIds?.length || 0,
+        hasDocumentUrls: !!updates.documentUrls,
+        documentUrlsCount: updates.documentUrls?.length || 0,
+        hasDocumentIds: !!updates.documentIds,
+        documentIdsCount: updates.documentIds?.length || 0
       });
       
       // undefinedの値を除外した更新データを作成

@@ -14,13 +14,16 @@ import {
 import { 
   Business as BusinessIcon,
   Category as CategoryIcon,
-  Assessment as AssessmentIcon
+  Assessment as AssessmentIcon,
+  Image as ImageIcon
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useTransactions } from '../contexts/TransactionContext';
 import SiteManagement from '../components/SiteManagement';
 import CategoryManagement from '../components/CategoryManagement';
+import { getImageFromLocalStorage } from '../utils/imageUtils';
+import { calculateTotalCategoryExpenses } from '../utils/transactionCalculations';
 
 const Dashboard: React.FC = () => {
   const { sites, activeSites, selectedSiteId, setSelectedSiteId } = useSites();
@@ -232,6 +235,74 @@ const Dashboard: React.FC = () => {
                   }}>
                     <strong>実績利益:</strong> {incomeMinusExpense >= 0 ? "+" : ""}¥{incomeMinusExpense.toLocaleString()}
                   </Typography>
+                  {/* 写真表示セクション */}
+                  {((selectedSite.imageIds && selectedSite.imageIds.length > 0) || 
+                    (selectedSite.imageUrls && selectedSite.imageUrls.length > 0)) && (
+                    <>
+                      <Divider sx={{ my: 2 }} />
+                      <Typography variant="body2" color="primary" gutterBottom>
+                        📷 現場写真
+                      </Typography>
+                      <Box display="flex" gap={1} flexWrap="wrap" mb={2}>
+                        {/* ローカルストレージの画像 */}
+                        {selectedSite.imageIds && selectedSite.imageIds.slice(0, 4).map((imageId, index) => {
+                          const imageData = getImageFromLocalStorage(selectedSite.id, imageId);
+                          if (!imageData) return null;
+                          return (
+                            <img
+                              key={`dashboard-site-local-${index}`}
+                              src={imageData}
+                              alt={`現場画像-${index}`}
+                              style={{
+                                width: 60,
+                                height: 60,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: '2px solid #ddd'
+                              }}
+                            />
+                          );
+                        })}
+                        
+                        {/* Firebase Storageの画像 */}
+                        {selectedSite.imageUrls && selectedSite.imageUrls.slice(0, 4).map((url, index) => (
+                          <img
+                            key={`dashboard-site-firebase-${index}`}
+                            src={url}
+                            alt={`現場画像-${index}`}
+                            style={{
+                              width: 60,
+                              height: 60,
+                              objectFit: 'cover',
+                              borderRadius: 8,
+                              border: '2px solid #ddd'
+                            }}
+                          />
+                        ))}
+                        
+                        {/* 追加画像がある場合の表示 */}
+                        {((selectedSite.imageIds?.length || 0) + (selectedSite.imageUrls?.length || 0)) > 4 && (
+                          <Box
+                            sx={{
+                              width: 60,
+                              height: 60,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: 'grey.200',
+                              borderRadius: 2,
+                              border: '2px solid #ddd'
+                            }}
+                          >
+                            <Typography variant="caption" color="text.secondary" fontSize="12px">
+                              +{((selectedSite.imageIds?.length || 0) + (selectedSite.imageUrls?.length || 0)) - 4}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </>
+                  )}
+                  
                   {selectedSite.comment && (
                     <>
                       <Divider sx={{ my: 2 }} />
@@ -251,25 +322,50 @@ const Dashboard: React.FC = () => {
                     </Typography>
                   ) : (
                     <Box display="flex" flexDirection="column" gap={1}>
-                      {selectedSiteCategories.map((category) => (
-                        <Box key={category.id} display="flex" justifyContent="space-between" alignItems="center">
-                          <Box>
-                            <Typography variant="body2" fontWeight="bold">
-                              {category.name}
-                            </Typography>
-                            {category.description && (
-                              <Typography variant="caption" color="text.secondary">
-                                {category.description}
+                      {selectedSiteCategories.map((category) => {
+                        const categoryExpenses = calculateTotalCategoryExpenses(siteExpenses, category.id, selectedSiteId || undefined);
+                        return (
+                          <Box key={category.id} display="flex" justifyContent="space-between" alignItems="center">
+                            <Box>
+                              <Typography variant="body2" fontWeight="bold">
+                                {category.name}
                               </Typography>
-                            )}
+                              {category.description && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {category.description}
+                                </Typography>
+                              )}
+                              <Typography variant="caption" display="block" color="error.main">
+                                実績支出: ¥{categoryExpenses.toLocaleString()}
+                              </Typography>
+                            </Box>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <Chip 
+                                label={`¥${category.budgetAmount.toLocaleString()}`}
+                                size="small"
+                                color={category.isActive ? 'primary' : 'default'}
+                              />
+                              <Box sx={{ 
+                                minWidth: '100px',
+                                textAlign: 'right'
+                              }}>
+                                <Typography variant="caption" sx={{ 
+                                  color: 'text.secondary',
+                                  display: 'block'
+                                }}>
+                                  予算残
+                                </Typography>
+                                <Typography variant="body2" sx={{ 
+                                  color: (category.budgetAmount - categoryExpenses) >= 0 ? 'success.main' : 'error.main',
+                                  fontWeight: 'bold'
+                                }}>
+                                  {(category.budgetAmount - categoryExpenses) >= 0 ? "+" : ""}¥{(category.budgetAmount - categoryExpenses).toLocaleString()}
+                                </Typography>
+                              </Box>
+                            </Box>
                           </Box>
-                          <Chip 
-                            label={`¥${category.budgetAmount.toLocaleString()}`}
-                            size="small"
-                            color={category.isActive ? 'primary' : 'default'}
-                          />
-                        </Box>
-                      ))}
+                        );
+                      })}
                     </Box>
                   )}
                 </Grid>
@@ -323,9 +419,18 @@ const Dashboard: React.FC = () => {
                         </Typography>
                       )}
                       <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                        <Typography variant="body2">
-                          予算: ¥{budget.toLocaleString()}
-                        </Typography>
+                        <Box>
+                          <Typography variant="body2">
+                            予算: ¥{budget.toLocaleString()}
+                          </Typography>
+                          <Typography variant="body2" sx={{ 
+                            color: (budget - siteExpenseAmount) >= 0 ? 'success.main' : 'error.main',
+                            fontWeight: 'bold',
+                            fontSize: '0.8rem'
+                          }}>
+                            残金: {(budget - siteExpenseAmount) >= 0 ? "+" : ""}¥{(budget - siteExpenseAmount).toLocaleString()}
+                          </Typography>
+                        </Box>
                         <Chip 
                           label={isSelected ? '選択中' : '選択'} 
                           color={isSelected ? 'primary' : 'default'}
@@ -335,6 +440,76 @@ const Dashboard: React.FC = () => {
                       <Typography variant="caption" color="text.secondary">
                         カテゴリー: {categories.length} | 支出: ¥{siteExpenseAmount.toLocaleString()}
                       </Typography>
+                      
+                      {/* 写真表示セクション */}
+                      {((site.imageIds && site.imageIds.length > 0) || 
+                        (site.imageUrls && site.imageUrls.length > 0)) && (
+                        <Box mt={1}>
+                          <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
+                            <ImageIcon fontSize="small" color="action" />
+                            <Typography variant="caption" color="text.secondary">
+                              写真登録済み
+                            </Typography>
+                          </Box>
+                          <Box display="flex" gap={0.5} flexWrap="wrap">
+                            {/* ローカルストレージの画像 */}
+                            {site.imageIds && site.imageIds.slice(0, 3).map((imageId, index) => {
+                              const imageData = getImageFromLocalStorage(site.id, imageId);
+                              if (!imageData) return null;
+                              return (
+                                <img
+                                  key={`dashboard-list-local-${index}`}
+                                  src={imageData}
+                                  alt={`現場画像-${index}`}
+                                  style={{
+                                    width: 32,
+                                    height: 32,
+                                    objectFit: 'cover',
+                                    borderRadius: 4,
+                                    border: '1px solid #ddd'
+                                  }}
+                                />
+                              );
+                            })}
+                            
+                            {/* Firebase Storageの画像 */}
+                            {site.imageUrls && site.imageUrls.slice(0, 3).map((url, index) => (
+                              <img
+                                key={`dashboard-list-firebase-${index}`}
+                                src={url}
+                                alt={`現場画像-${index}`}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  objectFit: 'cover',
+                                  borderRadius: 4,
+                                  border: '1px solid #ddd'
+                                }}
+                              />
+                            ))}
+                            
+                            {/* 追加画像がある場合の表示 */}
+                            {((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) > 3 && (
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: 'grey.200',
+                                  borderRadius: 1,
+                                  border: '1px solid #ddd'
+                                }}
+                              >
+                                <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                  +{((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) - 3}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                        </Box>
+                      )}
                     </CardContent>
                   </Card>
                 </Grid>

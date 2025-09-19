@@ -20,7 +20,8 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   Divider,
-  Alert
+  Alert,
+  LinearProgress
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -28,16 +29,20 @@ import {
   Delete as DeleteIcon,
   Business as BusinessIcon,
   PhotoCamera,
-  Delete as DeletePhotoIcon
+  Delete as DeletePhotoIcon,
+  Image as ImageIcon,
+  AttachFile as AttachFileIcon
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useStorageMonitor } from '../hooks/useStorageMonitor';
 import { saveSiteImagesHybridBatch, getImageFromLocalStorage } from '../utils/imageUtils';
+import { saveDocumentsHybridBatch, getAllDocumentsForEntity, deleteDocumentFromLocalStorage, deleteDocumentFromFirebaseStorage } from '../utils/documentUtils';
+import DocumentAttachment, { DocumentInfo } from './common/DocumentAttachment';
 import { Site } from '../types';
 import { 
-  calculateCurrentMonthSiteExpenseTotal, 
+  calculateTotalSiteExpenses, 
   calculateSiteBudgetRemaining 
 } from '../utils/transactionCalculations';
 
@@ -84,6 +89,13 @@ const SiteManagement: React.FC = () => {
   // ダイアログ開始時の初期画像状態を保持（Context更新による影響を受けないように）
   const [initialImageIds, setInitialImageIds] = useState<string[]>([]);
   const [initialImageUrls, setInitialImageUrls] = useState<string[]>([]);
+  
+  // 書類関連の状態
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [existingDocumentIds, setExistingDocumentIds] = useState<string[]>([]);
+  const [existingDocumentUrls, setExistingDocumentUrls] = useState<string[]>([]);
+  const [initialDocumentIds, setInitialDocumentIds] = useState<string[]>([]);
+  const [initialDocumentUrls, setInitialDocumentUrls] = useState<string[]>([]);
 
   // 画像処理関数
   const handleImageSelect = async (files: FileList | null) => {
@@ -148,6 +160,27 @@ const SiteManagement: React.FC = () => {
   };
 
 
+  // 書類処理関数
+  const handleDocumentFilesSelect = (files: File[]) => {
+    setDocumentFiles(prev => [...prev, ...files]);
+  };
+
+  const handleDocumentRemove = (document: DocumentInfo, index: number) => {
+    if (document.source === 'local' && document.id) {
+      // ローカルストレージから即座に削除
+      if (editingSite) {
+        deleteDocumentFromLocalStorage(editingSite.id, document.id);
+      }
+      setExistingDocumentIds(prev => prev.filter(id => id !== document.id));
+    } else if (document.source === 'firebase' && document.url) {
+      // Firebase Storageから即座に削除
+      deleteDocumentFromFirebaseStorage(document.url).catch((error) => {
+        console.warn('⚠️ Firebase書類削除失敗（続行）:', error);
+      });
+      setExistingDocumentUrls(prev => prev.filter(url => url !== document.url));
+    }
+  };
+
   // フォームのリセット
   const resetForm = () => {
     setFormData({
@@ -164,6 +197,11 @@ const SiteManagement: React.FC = () => {
     setExistingImageUrls([]);
     setInitialImageIds([]);
     setInitialImageUrls([]);
+    setDocumentFiles([]);
+    setExistingDocumentIds([]);
+    setExistingDocumentUrls([]);
+    setInitialDocumentIds([]);
+    setInitialDocumentUrls([]);
   };
 
   // ダイアログを開く
@@ -187,6 +225,16 @@ const SiteManagement: React.FC = () => {
       setInitialImageUrls(initialUrls);
       setImageFiles([]);
       setImagePreviews([]);
+      
+      // 既存の書類データを設定
+      const initialDocIds = [...(site.documentIds || [])];
+      const initialDocUrls = [...(site.documentUrls || [])];
+      
+      setExistingDocumentIds(initialDocIds);
+      setExistingDocumentUrls(initialDocUrls);
+      setInitialDocumentIds(initialDocIds);
+      setInitialDocumentUrls(initialDocUrls);
+      setDocumentFiles([]);
       
       console.log('🎯 ダイアログ開始時の画像データ:', {
         siteId: site.id,
@@ -278,6 +326,28 @@ const SiteManagement: React.FC = () => {
           // 画像保存エラーは致命的ではないため、続行
         }
       }
+      
+      // 書類がある場合は保存処理
+      let newDocumentIds: string[] = [];
+      let newDocumentUrls: string[] = [];
+      
+      if (documentFiles && documentFiles.length > 0) {
+        try {
+          const docResults = await saveDocumentsHybridBatch(siteId, documentFiles, 'sites');
+          
+          newDocumentIds = docResults.filter(r => r.documentId).map(r => r.documentId!);
+          newDocumentUrls = docResults.filter(r => r.documentUrl).map(r => r.documentUrl!);
+          
+          console.log('📄 現場書類保存結果:', {
+            documentIds: newDocumentIds,
+            documentUrls: newDocumentUrls,
+            保存数: docResults.length
+          });
+        } catch (documentError) {
+          console.error('書類保存エラー:', documentError);
+          // 書類保存エラーは致命的ではないため、続行
+        }
+      }
 
       if (editingSite) {
         // 編集時：削除された画像を実際にストレージから削除
@@ -322,9 +392,41 @@ const SiteManagement: React.FC = () => {
           return exists;
         });
         
+        // 書類削除処理
+        const deletedDocumentIds = initialDocumentIds.filter(id => !existingDocumentIds.includes(id));
+        const deletedDocumentUrls = initialDocumentUrls.filter(url => !existingDocumentUrls.includes(url));
+        
+        console.log('🗑️ 削除対象の書類:', {
+          削除されたDocumentIDs: deletedDocumentIds,
+          削除されたDocumentURLs: deletedDocumentUrls
+        });
+        
+        // 削除された書類をストレージから実際に削除
+        for (const documentId of deletedDocumentIds) {
+          try {
+            deleteDocumentFromLocalStorage(editingSite.id, documentId);
+            console.log('✅ ローカル書類削除:', documentId);
+          } catch (error) {
+            console.error('❌ ローカル書類削除エラー:', documentId, error);
+          }
+        }
+        
+        for (const documentUrl of deletedDocumentUrls) {
+          try {
+            await deleteDocumentFromFirebaseStorage(documentUrl);
+            console.log('✅ Firebase書類削除:', documentUrl);
+          } catch (error) {
+            console.error('❌ Firebase書類削除エラー:', documentUrl, error);
+          }
+        }
+
         // 最終的な画像データ（有効な既存 + 新規追加）
         const finalImageIds = [...validImageIds, ...newImageIds];
         const finalImageUrls = [...existingImageUrls, ...newImageUrls];
+        
+        // 最終的な書類データ（有効な既存 + 新規追加）
+        const finalDocumentIds = [...existingDocumentIds, ...newDocumentIds];
+        const finalDocumentUrls = [...existingDocumentUrls, ...newDocumentUrls];
         
         console.log('🔍 ローカル画像ID検証結果:', {
           元のexistingImageIds: existingImageIds,
@@ -334,7 +436,9 @@ const SiteManagement: React.FC = () => {
         
         const updateData: any = {
           imageIds: finalImageIds, // 削除が反映された最終状態
-          imageUrls: finalImageUrls // 削除が反映された最終状態
+          imageUrls: finalImageUrls, // 削除が反映された最終状態
+          documentIds: finalDocumentIds, // 削除が反映された最終状態
+          documentUrls: finalDocumentUrls // 削除が反映された最終状態
         };
         
         console.log('🖼️ DB更新最終データ:', {
@@ -353,14 +457,18 @@ const SiteManagement: React.FC = () => {
         });
         
       } else {
-        // 新規作成時：画像がある場合のみ更新
+        // 新規作成時：画像・書類がある場合のみ更新
         const allImageIds = [...existingImageIds, ...newImageIds];
         const allImageUrls = [...existingImageUrls, ...newImageUrls];
+        const allDocumentIds = [...existingDocumentIds, ...newDocumentIds];
+        const allDocumentUrls = [...existingDocumentUrls, ...newDocumentUrls];
         
-        if (allImageIds.length > 0 || allImageUrls.length > 0) {
+        if (allImageIds.length > 0 || allImageUrls.length > 0 || allDocumentIds.length > 0 || allDocumentUrls.length > 0) {
           const updateData: any = {};
           if (allImageIds.length > 0) updateData.imageIds = allImageIds;
           if (allImageUrls.length > 0) updateData.imageUrls = allImageUrls;
+          if (allDocumentIds.length > 0) updateData.documentIds = allDocumentIds;
+          if (allDocumentUrls.length > 0) updateData.documentUrls = allDocumentUrls;
           
           await updateSite(siteId, updateData);
         }
@@ -424,10 +532,14 @@ const SiteManagement: React.FC = () => {
         <Grid container spacing={2}>
           {sites.map((site) => {
             const totalBudget = getTotalBudgetBySite(site.id);
-            const siteExpenseTotal = calculateCurrentMonthSiteExpenseTotal(siteExpenses, site.id);
+            const siteExpenseTotal = calculateTotalSiteExpenses(siteExpenses, site.id);
             const siteBudgetRemaining = calculateSiteBudgetRemaining(totalBudget, siteExpenseTotal);
             const isSiteOverBudget = siteBudgetRemaining < 0;
             const isSelected = selectedSiteId === site.id;
+            
+            // 使用率の計算（予算が0の場合は0%とする）
+            const usageRate = totalBudget > 0 ? (siteExpenseTotal / totalBudget) * 100 : 0;
+            const usageRateColor = usageRate > 100 ? 'error' : usageRate > 80 ? 'warning' : 'primary';
             
             return (
               <Grid key={site.id} item xs={12} sm={6} md={4} {...({} as any)}>
@@ -488,7 +600,7 @@ const SiteManagement: React.FC = () => {
                     </Typography>
 
                     <Typography variant="body2" color="text.secondary" mb={1}>
-                      支出合計: ¥{siteExpenseTotal.toLocaleString()}
+                      支出合計（累計）: ¥{siteExpenseTotal.toLocaleString()}
                     </Typography>
 
                     <Typography 
@@ -500,6 +612,120 @@ const SiteManagement: React.FC = () => {
                       予算残: ¥{siteBudgetRemaining.toLocaleString()}
                       {isSiteOverBudget && ' (予算超過)'}
                     </Typography>
+
+                    {/* 使用率表示 */}
+                    <Box mb={2}>
+                      <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                        <Typography variant="caption" color="text.secondary">
+                          予算使用率
+                        </Typography>
+                        <Typography 
+                          variant="caption" 
+                          color={usageRateColor}
+                          fontWeight="bold"
+                        >
+                          {usageRate.toFixed(1)}%
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={Math.min(usageRate, 100)} 
+                        color={usageRateColor}
+                        sx={{ 
+                          height: 8, 
+                          borderRadius: 4,
+                          backgroundColor: 'grey.200'
+                        }}
+                      />
+                      {usageRate > 100 && (
+                        <Typography variant="caption" color="error.main" sx={{ mt: 0.5, display: 'block' }}>
+                          予算を{(usageRate - 100).toFixed(1)}%超過しています
+                        </Typography>
+                      )}
+                    </Box>
+
+                    {/* 写真表示セクション */}
+                    {((site.imageIds && site.imageIds.length > 0) || 
+                      (site.imageUrls && site.imageUrls.length > 0)) && (
+                      <Box mb={1}>
+                        <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
+                          <ImageIcon fontSize="small" color="action" />
+                          <Typography variant="caption" color="text.secondary">
+                            写真登録済み
+                          </Typography>
+                        </Box>
+                        <Box display="flex" gap={0.5} flexWrap="wrap">
+                          {/* ローカルストレージの画像 */}
+                          {site.imageIds && site.imageIds.slice(0, 3).map((imageId, index) => {
+                            const imageData = getImageFromLocalStorage(site.id, imageId);
+                            if (!imageData) return null;
+                            return (
+                              <img
+                                key={`site-local-${index}`}
+                                src={imageData}
+                                alt={`現場画像-${index}`}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  objectFit: 'cover',
+                                  borderRadius: 4,
+                                  border: '1px solid #ddd'
+                                }}
+                              />
+                            );
+                          })}
+                          
+                          {/* Firebase Storageの画像 */}
+                          {site.imageUrls && site.imageUrls.slice(0, 3).map((url, index) => (
+                            <img
+                              key={`site-firebase-${index}`}
+                              src={url}
+                              alt={`現場画像-${index}`}
+                              style={{
+                                width: 32,
+                                height: 32,
+                                objectFit: 'cover',
+                                borderRadius: 4,
+                                border: '1px solid #ddd'
+                              }}
+                            />
+                          ))}
+                          
+                          {/* 追加画像がある場合の表示 */}
+                          {((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) > 3 && (
+                            <Box
+                              sx={{
+                                width: 32,
+                                height: 32,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: 'grey.200',
+                                borderRadius: 1,
+                                border: '1px solid #ddd'
+                              }}
+                            >
+                              <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                +{((site.imageIds?.length || 0) + (site.imageUrls?.length || 0)) - 3}
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    )}
+
+                    {/* 書類表示セクション */}
+                    {((site.documentIds && site.documentIds.length > 0) || 
+                      (site.documentUrls && site.documentUrls.length > 0)) && (
+                      <Box mb={1}>
+                        <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
+                          <AttachFileIcon fontSize="small" color="action" />
+                          <Typography variant="caption" color="text.secondary">
+                            書類登録済み ({(site.documentIds?.length || 0) + (site.documentUrls?.length || 0)}件)
+                          </Typography>
+                        </Box>
+                      </Box>
+                    )}
 
                     {site.comment && (
                       <Typography variant="body2" color="text.secondary" mt={1}>
@@ -715,6 +941,51 @@ const SiteManagement: React.FC = () => {
                 現場の写真（図面、現状写真など）をアップロードできます。
               </Typography>
             </Box>
+
+            {/* 書類アップロード機能 */}
+            <DocumentAttachment
+              entityId={editingSite?.id || 'new-site'}
+              documents={[
+                // 既存のローカル書類
+                ...existingDocumentIds.map(id => {
+                  const doc = editingSite ? getAllDocumentsForEntity(editingSite.id).find(d => d.id === id) : null;
+                  return doc ? {
+                    id,
+                    fileName: doc.fileName,
+                    fileType: doc.fileType,
+                    uploadedAt: doc.uploadedAt,
+                    source: 'local' as const
+                  } : null;
+                }).filter(Boolean) as DocumentInfo[],
+                // 既存のFirebase書類
+                ...existingDocumentUrls.map(url => ({
+                  url,
+                  fileName: url.split('/').pop()?.split('_').slice(1).join('_') || 'document',
+                  fileType: 'application/octet-stream',
+                  uploadedAt: new Date().toISOString(),
+                  source: 'firebase' as const
+                })),
+                // 新しく選択された書類
+                ...documentFiles.map(file => ({
+                  fileName: file.name,
+                  fileType: file.type,
+                  uploadedAt: new Date().toISOString(),
+                  source: 'local' as const,
+                  size: file.size,
+                  file: file
+                }))
+              ]}
+              onDocumentsChange={(docs) => {
+                // 新しく選択されたファイルのみを抽出
+                const newFileDocuments = docs.filter(doc => doc.file);
+                const files = newFileDocuments.map(doc => doc.file!);
+                setDocumentFiles(files);
+              }}
+              onFilesSelect={handleDocumentFilesSelect}
+              onDocumentRemove={handleDocumentRemove}
+              label="現場書類を添付"
+              helperText="契約書、図面、仕様書、見積書などの書類をアップロードできます。"
+            />
           </Box>
 
           {/* ストレージアラート */}

@@ -30,19 +30,25 @@ import {
   Category as CategoryIcon,
   Business as BusinessIcon,
   PhotoCamera,
-  Delete as DeletePhotoIcon
+  Delete as DeletePhotoIcon,
+  Image as ImageIcon,
+  AttachFile as AttachFileIcon
 } from '@mui/icons-material';
 import { useSites } from '../contexts/SiteContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useStorageMonitor } from '../hooks/useStorageMonitor';
 import { saveSiteImagesHybridBatch, getImageFromLocalStorage } from '../utils/imageUtils';
+import { saveDocumentsHybridBatch, getAllDocumentsForEntity, deleteDocumentFromLocalStorage, deleteDocumentFromFirebaseStorage } from '../utils/documentUtils';
+import DocumentAttachment, { DocumentInfo } from './common/DocumentAttachment';
 import { SiteCategory } from '../types';
 import { 
   calculateCurrentMonthCategoryExpenses, 
   calculateCategoryBudgetRemaining,
   calculateCurrentMonthSiteExpenseTotal,
-  calculateSiteBudgetRemaining
+  calculateSiteBudgetRemaining,
+  calculateTotalCategoryExpenses,
+  calculateTotalSiteExpenses
 } from '../utils/transactionCalculations';
 
 interface CategoryFormData {
@@ -92,6 +98,13 @@ const CategoryManagement: React.FC = () => {
   // ダイアログ開始時の初期画像状態を保持（Context更新による影響を受けないように）
   const [initialImageIds, setInitialImageIds] = useState<string[]>([]);
   const [initialImageUrls, setInitialImageUrls] = useState<string[]>([]);
+  
+  // 書類関連の状態
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [existingDocumentIds, setExistingDocumentIds] = useState<string[]>([]);
+  const [existingDocumentUrls, setExistingDocumentUrls] = useState<string[]>([]);
+  const [initialDocumentIds, setInitialDocumentIds] = useState<string[]>([]);
+  const [initialDocumentUrls, setInitialDocumentUrls] = useState<string[]>([]);
 
   // 表示するカテゴリーを取得
   const displayCategories = filterSiteId 
@@ -152,6 +165,27 @@ const CategoryManagement: React.FC = () => {
   };
 
 
+  // 書類処理関数
+  const handleDocumentFilesSelect = (files: File[]) => {
+    setDocumentFiles(prev => [...prev, ...files]);
+  };
+
+  const handleDocumentRemove = (document: DocumentInfo, index: number) => {
+    if (document.source === 'local' && document.id) {
+      // ローカルストレージから即座に削除
+      if (editingCategory) {
+        deleteDocumentFromLocalStorage(editingCategory.id, document.id);
+      }
+      setExistingDocumentIds(prev => prev.filter(id => id !== document.id));
+    } else if (document.source === 'firebase' && document.url) {
+      // Firebase Storageから即座に削除
+      deleteDocumentFromFirebaseStorage(document.url).catch((error) => {
+        console.warn('⚠️ Firebase書類削除失敗（続行）:', error);
+      });
+      setExistingDocumentUrls(prev => prev.filter(url => url !== document.url));
+    }
+  };
+
   // フォームのリセット
   const resetForm = () => {
     setFormData({
@@ -170,6 +204,11 @@ const CategoryManagement: React.FC = () => {
     setExistingImageUrls([]);
     setInitialImageIds([]);
     setInitialImageUrls([]);
+    setDocumentFiles([]);
+    setExistingDocumentIds([]);
+    setExistingDocumentUrls([]);
+    setInitialDocumentIds([]);
+    setInitialDocumentUrls([]);
   };
 
   // ダイアログを開く
@@ -195,6 +234,16 @@ const CategoryManagement: React.FC = () => {
       setInitialImageUrls(initialUrls);
       setImageFiles([]);
       setImagePreviews([]);
+      
+      // 既存の書類データを設定
+      const initialDocIds = [...(category.documentIds || [])];
+      const initialDocUrls = [...(category.documentUrls || [])];
+      
+      setExistingDocumentIds(initialDocIds);
+      setExistingDocumentUrls(initialDocUrls);
+      setInitialDocumentIds(initialDocIds);
+      setInitialDocumentUrls(initialDocUrls);
+      setDocumentFiles([]);
       
       console.log('🎯 カテゴリーダイアログ開始時の画像データ:', {
         categoryId: category.id,
@@ -291,6 +340,28 @@ const CategoryManagement: React.FC = () => {
           // 画像保存エラーは致命的ではないため、続行
         }
       }
+      
+      // 書類がある場合は保存処理
+      let newDocumentIds: string[] = [];
+      let newDocumentUrls: string[] = [];
+      
+      if (documentFiles && documentFiles.length > 0) {
+        try {
+          const docResults = await saveDocumentsHybridBatch(categoryId, documentFiles, 'categories');
+          
+          newDocumentIds = docResults.filter(r => r.documentId).map(r => r.documentId!);
+          newDocumentUrls = docResults.filter(r => r.documentUrl).map(r => r.documentUrl!);
+          
+          console.log('📄 カテゴリー書類保存結果:', {
+            documentIds: newDocumentIds,
+            documentUrls: newDocumentUrls,
+            保存数: docResults.length
+          });
+        } catch (documentError) {
+          console.error('書類保存エラー:', documentError);
+          // 書類保存エラーは致命的ではないため、続行
+        }
+      }
 
       if (editingCategory) {
         // 編集時：削除された画像を実際にストレージから削除
@@ -335,9 +406,41 @@ const CategoryManagement: React.FC = () => {
           return exists;
         });
         
+        // 書類削除処理
+        const deletedDocumentIds = initialDocumentIds.filter(id => !existingDocumentIds.includes(id));
+        const deletedDocumentUrls = initialDocumentUrls.filter(url => !existingDocumentUrls.includes(url));
+        
+        console.log('🗑️ カテゴリー削除対象の書類:', {
+          削除されたDocumentIDs: deletedDocumentIds,
+          削除されたDocumentURLs: deletedDocumentUrls
+        });
+        
+        // 削除された書類をストレージから実際に削除
+        for (const documentId of deletedDocumentIds) {
+          try {
+            deleteDocumentFromLocalStorage(editingCategory.id, documentId);
+            console.log('✅ カテゴリーローカル書類削除:', documentId);
+          } catch (error) {
+            console.error('❌ カテゴリーローカル書類削除エラー:', documentId, error);
+          }
+        }
+        
+        for (const documentUrl of deletedDocumentUrls) {
+          try {
+            await deleteDocumentFromFirebaseStorage(documentUrl);
+            console.log('✅ カテゴリーFirebase書類削除:', documentUrl);
+          } catch (error) {
+            console.error('❌ カテゴリーFirebase書類削除エラー:', documentUrl, error);
+          }
+        }
+
         // 最終的な画像データ（有効な既存 + 新規追加）
         const finalImageIds = [...validImageIds, ...newImageIds];
         const finalImageUrls = [...existingImageUrls, ...newImageUrls];
+        
+        // 最終的な書類データ（有効な既存 + 新規追加）
+        const finalDocumentIds = [...existingDocumentIds, ...newDocumentIds];
+        const finalDocumentUrls = [...existingDocumentUrls, ...newDocumentUrls];
         
         console.log('🔍 カテゴリーローカル画像ID検証結果:', {
           元のexistingImageIds: existingImageIds,
@@ -347,7 +450,9 @@ const CategoryManagement: React.FC = () => {
         
         const updateData: any = {
           imageIds: finalImageIds, // 削除が反映された最終状態
-          imageUrls: finalImageUrls // 削除が反映された最終状態
+          imageUrls: finalImageUrls, // 削除が反映された最終状態
+          documentIds: finalDocumentIds, // 削除が反映された最終状態
+          documentUrls: finalDocumentUrls // 削除が反映された最終状態
         };
         
         console.log('🖼️ カテゴリーDB更新最終データ:', {
@@ -360,14 +465,18 @@ const CategoryManagement: React.FC = () => {
         await updateCategory(categoryId, updateData);
         
       } else {
-        // 新規作成時：画像がある場合のみ更新
+        // 新規作成時：画像・書類がある場合のみ更新
         const allImageIds = [...existingImageIds, ...newImageIds];
         const allImageUrls = [...existingImageUrls, ...newImageUrls];
+        const allDocumentIds = [...existingDocumentIds, ...newDocumentIds];
+        const allDocumentUrls = [...existingDocumentUrls, ...newDocumentUrls];
         
-        if (allImageIds.length > 0 || allImageUrls.length > 0) {
+        if (allImageIds.length > 0 || allImageUrls.length > 0 || allDocumentIds.length > 0 || allDocumentUrls.length > 0) {
           const updateData: any = {};
           if (allImageIds.length > 0) updateData.imageIds = allImageIds;
           if (allImageUrls.length > 0) updateData.imageUrls = allImageUrls;
+          if (allDocumentIds.length > 0) updateData.documentIds = allDocumentIds;
+          if (allDocumentUrls.length > 0) updateData.documentUrls = allDocumentUrls;
           
           await updateCategory(categoryId, updateData);
         }
@@ -398,7 +507,7 @@ const CategoryManagement: React.FC = () => {
 
   // カテゴリーの支出実績と予算残額を計算
   const getCategoryFinancials = (category: SiteCategory) => {
-    const actualExpenses = calculateCurrentMonthCategoryExpenses(
+    const actualExpenses = calculateTotalCategoryExpenses(
       siteExpenses,
       category.id,
       category.siteId
@@ -490,7 +599,7 @@ const CategoryManagement: React.FC = () => {
               
               if (siteCategories.length === 0) return null;
 
-              const siteExpenseTotal = calculateCurrentMonthSiteExpenseTotal(siteExpenses, site.id);
+              const siteExpenseTotal = calculateTotalSiteExpenses(siteExpenses, site.id);
               const siteBudgetRemaining = calculateSiteBudgetRemaining(totalBudget, siteExpenseTotal);
               const isSiteOverBudget = siteBudgetRemaining < 0;
               
@@ -505,7 +614,7 @@ const CategoryManagement: React.FC = () => {
                       variant="outlined"
                     />
                     <Chip 
-                      label={`実績合計: ¥${siteExpenseTotal.toLocaleString()}`}
+                      label={`実績合計（累計）: ¥${siteExpenseTotal.toLocaleString()}`}
                       color="secondary"
                       variant="outlined"
                     />
@@ -602,6 +711,89 @@ const CategoryManagement: React.FC = () => {
                                   />
                                 </Box>
                               </Box>
+
+                              {/* 写真表示セクション */}
+                              {((category.imageIds && category.imageIds.length > 0) || 
+                                (category.imageUrls && category.imageUrls.length > 0)) && (
+                                <Box mb={1}>
+                                  <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
+                                    <ImageIcon fontSize="small" color="action" />
+                                    <Typography variant="caption" color="text.secondary">
+                                      写真登録済み
+                                    </Typography>
+                                  </Box>
+                                  <Box display="flex" gap={0.5} flexWrap="wrap">
+                                    {/* ローカルストレージの画像 */}
+                                    {category.imageIds && category.imageIds.slice(0, 3).map((imageId, index) => {
+                                      const imageData = getImageFromLocalStorage(category.id, imageId);
+                                      if (!imageData) return null;
+                                      return (
+                                        <img
+                                          key={`category-local-${index}`}
+                                          src={imageData}
+                                          alt={`カテゴリー画像-${index}`}
+                                          style={{
+                                            width: 32,
+                                            height: 32,
+                                            objectFit: 'cover',
+                                            borderRadius: 4,
+                                            border: '1px solid #ddd'
+                                          }}
+                                        />
+                                      );
+                                    })}
+                                    
+                                    {/* Firebase Storageの画像 */}
+                                    {category.imageUrls && category.imageUrls.slice(0, 3).map((url, index) => (
+                                      <img
+                                        key={`category-firebase-${index}`}
+                                        src={url}
+                                        alt={`カテゴリー画像-${index}`}
+                                        style={{
+                                          width: 32,
+                                          height: 32,
+                                          objectFit: 'cover',
+                                          borderRadius: 4,
+                                          border: '1px solid #ddd'
+                                        }}
+                                      />
+                                    ))}
+                                    
+                                    {/* 追加画像がある場合の表示 */}
+                                    {((category.imageIds?.length || 0) + (category.imageUrls?.length || 0)) > 3 && (
+                                      <Box
+                                        sx={{
+                                          width: 32,
+                                          height: 32,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          backgroundColor: 'grey.200',
+                                          borderRadius: 1,
+                                          border: '1px solid #ddd'
+                                        }}
+                                      >
+                                        <Typography variant="caption" color="text.secondary" fontSize="10px">
+                                          +{((category.imageIds?.length || 0) + (category.imageUrls?.length || 0)) - 3}
+                                        </Typography>
+                                      </Box>
+                                    )}
+                                  </Box>
+                                </Box>
+                              )}
+
+                              {/* 書類表示セクション */}
+                              {((category.documentIds && category.documentIds.length > 0) || 
+                                (category.documentUrls && category.documentUrls.length > 0)) && (
+                                <Box mb={1}>
+                                  <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
+                                    <AttachFileIcon fontSize="small" color="action" />
+                                    <Typography variant="caption" color="text.secondary">
+                                      書類登録済み ({(category.documentIds?.length || 0) + (category.documentUrls?.length || 0)}件)
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              )}
 
                               {category.comment && (
                                 <Typography variant="body2" color="text.secondary" mt={1}>
@@ -857,6 +1049,51 @@ const CategoryManagement: React.FC = () => {
                 カテゴリーの参考画像（見本、仕様書など）をアップロードできます。
               </Typography>
             </Box>
+
+            {/* 書類アップロード機能 */}
+            <DocumentAttachment
+              entityId={editingCategory?.id || 'new-category'}
+              documents={[
+                // 既存のローカル書類
+                ...existingDocumentIds.map(id => {
+                  const doc = editingCategory ? getAllDocumentsForEntity(editingCategory.id).find(d => d.id === id) : null;
+                  return doc ? {
+                    id,
+                    fileName: doc.fileName,
+                    fileType: doc.fileType,
+                    uploadedAt: doc.uploadedAt,
+                    source: 'local' as const
+                  } : null;
+                }).filter(Boolean) as DocumentInfo[],
+                // 既存のFirebase書類
+                ...existingDocumentUrls.map(url => ({
+                  url,
+                  fileName: url.split('/').pop()?.split('_').slice(1).join('_') || 'document',
+                  fileType: 'application/octet-stream',
+                  uploadedAt: new Date().toISOString(),
+                  source: 'firebase' as const
+                })),
+                // 新しく選択された書類
+                ...documentFiles.map(file => ({
+                  fileName: file.name,
+                  fileType: file.type,
+                  uploadedAt: new Date().toISOString(),
+                  source: 'local' as const,
+                  size: file.size,
+                  file: file
+                }))
+              ]}
+              onDocumentsChange={(docs) => {
+                // 新しく選択されたファイルのみを抽出
+                const newFileDocuments = docs.filter(doc => doc.file);
+                const files = newFileDocuments.map(doc => doc.file!);
+                setDocumentFiles(files);
+              }}
+              onFilesSelect={handleDocumentFilesSelect}
+              onDocumentRemove={handleDocumentRemove}
+              label="カテゴリー書類を添付"
+              helperText="仕様書、設計書、見本写真、契約書などの書類をアップロードできます。"
+            />
           </Box>
 
           {/* ストレージアラート */}

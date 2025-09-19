@@ -27,7 +27,9 @@ import { validateAmount, validateDescription } from '../utils/validationUtils';
 import { useAlert } from '../hooks/useAlert';
 import { useStorageMonitor } from '../hooks/useStorageMonitor';
 import { saveImagesHybridBatch } from '../utils/imageUtils';
+import { saveDocumentsHybridBatch } from '../utils/documentUtils';
 import NumericInput from './common/NumericInput';
+import DocumentAttachment, { DocumentInfo } from './common/DocumentAttachment';
 
 const SiteTransactionForm: React.FC = () => {
   const { addSiteTransaction, addSiteIncome, addSiteExpense, selectedDate, updateSiteIncome, updateSiteExpense } = useTransactions();
@@ -52,6 +54,10 @@ const SiteTransactionForm: React.FC = () => {
   // 画像アップロード関連の状態
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  
+  // 書類添付関連の状態
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
 
   // 選択された現場のカテゴリーを取得
   const availableCategories = siteId ? getActiveCategoriesBySite(siteId) : [];
@@ -94,6 +100,8 @@ const SiteTransactionForm: React.FC = () => {
     setCategoryId('');
     setImageFiles([]);
     setImagePreviews([]);
+    setDocumentFiles([]);
+    setDocuments([]);
     // 現場は保持
     setFieldErrors({});
   };
@@ -127,6 +135,26 @@ const SiteTransactionForm: React.FC = () => {
     
     setImageFiles(newFiles);
     setImagePreviews(newPreviews);
+  };
+
+  // 書類添付ハンドラー
+  const handleDocumentsChange = (docs: DocumentInfo[]) => {
+    setDocuments(docs);
+  };
+
+  const handleDocumentFilesSelect = (files: File[]) => {
+    setDocumentFiles(files);
+  };
+
+  const handleDocumentRemove = (document: DocumentInfo, index: number) => {
+    // 新しく選択されたファイルの削除
+    if (document.file) {
+      setDocumentFiles(prev => prev.filter(f => f !== document.file));
+    }
+    
+    // documents配列から削除
+    const newDocuments = documents.filter((_, i) => i !== index);
+    setDocuments(newDocuments);
   };
 
   // 画像保存処理
@@ -165,6 +193,45 @@ const SiteTransactionForm: React.FC = () => {
     } catch (error) {
       console.error('❌ 画像保存エラー:', error);
       throw new Error(`画像の保存に失敗しました: ${error}`);
+    }
+  };
+
+  // 書類保存処理
+  const saveDocumentsToStorage = async (transactionId: string): Promise<{
+    documentIds: string[];
+    documentUrls: string[];
+    saveReport: string;
+  }> => {
+    if (!documentFiles || documentFiles.length === 0) {
+      return { documentIds: [], documentUrls: [], saveReport: '保存対象の書類がありません' };
+    }
+
+    console.log('📄 書類保存開始:', {
+      ファイル数: documentFiles.length,
+      総サイズ: `${Math.round(documentFiles.reduce((sum, f) => sum + f.size, 0) / 1024)} KB`
+    });
+
+    try {
+      const results = await saveDocumentsHybridBatch(transactionId, documentFiles);
+      
+      const documentIds = results.filter(r => r.documentId).map(r => r.documentId!);
+      const documentUrls = results.filter(r => r.documentUrl).map(r => r.documentUrl!);
+      
+      const saveReport = `書類保存完了: ${results.length}件 (ローカル: ${results.filter(r => r.saveMethod === 'local').length}件, Firebase: ${results.filter(r => r.saveMethod === 'firebase').length}件)`;
+      
+      console.log('✅ 書類保存完了:', {
+        保存数: results.length,
+        ローカル: results.filter(r => r.saveMethod === 'local').length,
+        Firebase: results.filter(r => r.saveMethod === 'firebase').length,
+        documentIds,
+        documentUrls
+      });
+
+      return { documentIds, documentUrls, saveReport };
+
+    } catch (error) {
+      console.error('❌ 書類保存エラー:', error);
+      throw new Error(`書類の保存に失敗しました: ${error}`);
     }
   };
 
@@ -218,40 +285,56 @@ const SiteTransactionForm: React.FC = () => {
         
         transactionId = await addSiteIncome(incomeData);
         
-        // 画像がある場合は保存処理
-        if (imageFiles && imageFiles.length > 0) {
-          console.log('🖼️ 収入に画像を保存します:', {
-            fileCount: imageFiles.length,
-            files: imageFiles.map(f => ({ name: f.name, size: f.size }))
+        // 画像・書類がある場合は保存処理
+        const hasFiles = (imageFiles && imageFiles.length > 0) || (documentFiles && documentFiles.length > 0);
+        
+        if (hasFiles) {
+          console.log('🗂️ 収入にファイルを保存します:', {
+            imageCount: imageFiles?.length || 0,
+            documentCount: documentFiles?.length || 0
           });
 
           try {
-            const result = await saveImagesToStorage(transactionId);
-            newImageIds = result.imageIds;
-            newImageUrls = result.imageUrls;
+            const updateData: any = {};
+            let combinedSaveReport = '';
+            
+            // 画像保存
+            if (imageFiles && imageFiles.length > 0) {
+              const imageResult = await saveImagesToStorage(transactionId);
+              newImageIds = imageResult.imageIds;
+              newImageUrls = imageResult.imageUrls;
 
-            console.log('🖼️ 収入の画像保存結果:', {
-              imageIds: newImageIds,
-              imageUrls: newImageUrls,
-              report: result.saveReport
-            });
-
-            // 画像データが保存された場合、収入情報を更新
-            if (newImageIds.length > 0 || newImageUrls.length > 0) {
-              const updateData: any = {};
               if (newImageIds.length > 0) updateData.imageIds = newImageIds;
               if (newImageUrls.length > 0) updateData.imageUrls = newImageUrls;
               
+              combinedSaveReport += imageResult.saveReport;
+            }
+            
+            // 書類保存
+            if (documentFiles && documentFiles.length > 0) {
+              const documentResult = await saveDocumentsToStorage(transactionId);
+              
+              if (documentResult.documentIds.length > 0) updateData.documentIds = documentResult.documentIds;
+              if (documentResult.documentUrls.length > 0) updateData.documentUrls = documentResult.documentUrls;
+              
+              if (combinedSaveReport) {
+                combinedSaveReport += ' / ';
+              }
+              combinedSaveReport += documentResult.saveReport;
+            }
+
+            // ファイルデータが保存された場合、収入情報を更新
+            if (Object.keys(updateData).length > 0) {
               await updateSiteIncome(transactionId, updateData);
             }
 
-            showSuccess(`収入を追加しました（カテゴリー: 売上）${result.saveReport}`);
+            showSuccess(`収入を追加しました（カテゴリー: 売上）${combinedSaveReport}`);
             
-            // 画像アップロード後にストレージ使用量をチェック
+            // ファイルアップロード後にストレージ使用量をチェック
             checkAfterImageUpload();
-          } catch (imageError) {
-            console.error('画像保存エラー:', imageError);
-            showError('収入は追加されましたが、画像の保存に失敗しました。');
+          } catch (fileError) {
+            console.error('ファイル保存エラー:', fileError);
+            showError('収入は追加されましたが、ファイルの保存に失敗しました。');
           }
         } else {
           showSuccess('収入を追加しました（カテゴリー: 売上）');
@@ -268,40 +351,56 @@ const SiteTransactionForm: React.FC = () => {
         
         transactionId = await addSiteExpense(expenseData);
         
-        // 画像がある場合は保存処理
-        if (imageFiles && imageFiles.length > 0) {
-          console.log('🖼️ 支出に画像を保存します:', {
-            fileCount: imageFiles.length,
-            files: imageFiles.map(f => ({ name: f.name, size: f.size }))
+        // 画像・書類がある場合は保存処理
+        const hasFiles = (imageFiles && imageFiles.length > 0) || (documentFiles && documentFiles.length > 0);
+        
+        if (hasFiles) {
+          console.log('🗂️ 支出にファイルを保存します:', {
+            imageCount: imageFiles?.length || 0,
+            documentCount: documentFiles?.length || 0
           });
 
           try {
-            const result = await saveImagesToStorage(transactionId);
-            newImageIds = result.imageIds;
-            newImageUrls = result.imageUrls;
+            const updateData: any = {};
+            let combinedSaveReport = '';
+            
+            // 画像保存
+            if (imageFiles && imageFiles.length > 0) {
+              const imageResult = await saveImagesToStorage(transactionId);
+              newImageIds = imageResult.imageIds;
+              newImageUrls = imageResult.imageUrls;
 
-            console.log('🖼️ 支出の画像保存結果:', {
-              imageIds: newImageIds,
-              imageUrls: newImageUrls,
-              report: result.saveReport
-            });
-
-            // 画像データが保存された場合、支出情報を更新
-            if (newImageIds.length > 0 || newImageUrls.length > 0) {
-              const updateData: any = {};
               if (newImageIds.length > 0) updateData.imageIds = newImageIds;
               if (newImageUrls.length > 0) updateData.imageUrls = newImageUrls;
               
+              combinedSaveReport += imageResult.saveReport;
+            }
+            
+            // 書類保存
+            if (documentFiles && documentFiles.length > 0) {
+              const documentResult = await saveDocumentsToStorage(transactionId);
+              
+              if (documentResult.documentIds.length > 0) updateData.documentIds = documentResult.documentIds;
+              if (documentResult.documentUrls.length > 0) updateData.documentUrls = documentResult.documentUrls;
+              
+              if (combinedSaveReport) {
+                combinedSaveReport += ' / ';
+              }
+              combinedSaveReport += documentResult.saveReport;
+            }
+
+            // ファイルデータが保存された場合、支出情報を更新
+            if (Object.keys(updateData).length > 0) {
               await updateSiteExpense(transactionId, updateData);
             }
 
-            showSuccess(`支出を追加しました ${result.saveReport}`);
+            showSuccess(`支出を追加しました ${combinedSaveReport}`);
             
-            // 画像アップロード後にストレージ使用量をチェック
+            // ファイルアップロード後にストレージ使用量をチェック
             checkAfterImageUpload();
-          } catch (imageError) {
-            console.error('画像保存エラー:', imageError);
-            showError('支出は追加されましたが、画像の保存に失敗しました。');
+          } catch (fileError) {
+            console.error('ファイル保存エラー:', fileError);
+            showError('支出は追加されましたが、ファイルの保存に失敗しました。');
           }
         } else {
           showSuccess('支出を追加しました');
@@ -582,6 +681,18 @@ const SiteTransactionForm: React.FC = () => {
           写真は自動的に圧縮されます。大きなファイルも安心してアップロードできます。
         </Typography>
       </Box>
+
+      {/* 書類添付 */}
+      <DocumentAttachment
+        entityId="site-transaction-form"
+        documents={documents}
+        onDocumentsChange={handleDocumentsChange}
+        onFilesSelect={handleDocumentFilesSelect}
+        onDocumentRemove={handleDocumentRemove}
+        maxFiles={5}
+        label="書類を添付（任意）"
+        helperText="レシート、請求書、契約書などの書類をアップロードできます（最大10MB）"
+      />
 
       {/* ボタン */}
       <Box display="flex" gap={2} justifyContent="flex-end">

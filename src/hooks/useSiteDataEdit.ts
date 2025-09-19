@@ -3,6 +3,11 @@ import { useTransactions } from '../contexts/TransactionContext';
 import { SiteIncome, SiteExpense } from '../types';
 import { useAlert } from './useAlert';
 import { saveImagesHybridBatch } from '../utils/imageUtils';
+import { 
+  saveDocumentsHybridBatch, 
+  deleteDocumentFromLocalStorage, 
+  deleteDocumentFromFirebaseStorage 
+} from '../utils/documentUtils';
 
 export interface SiteIncomeEditForm {
   amount: string;
@@ -11,6 +16,9 @@ export interface SiteIncomeEditForm {
   imagePreviews: string[];
   existingImageIds: string[];
   existingImageUrls: string[];
+  documentFiles: File[];
+  existingDocumentIds: string[];
+  existingDocumentUrls: string[];
 }
 
 export interface SiteExpenseEditForm {
@@ -21,6 +29,9 @@ export interface SiteExpenseEditForm {
   imagePreviews: string[];
   existingImageIds: string[];
   existingImageUrls: string[];
+  documentFiles: File[];
+  existingDocumentIds: string[];
+  existingDocumentUrls: string[];
 }
 
 export const useSiteDataEdit = () => {
@@ -40,7 +51,10 @@ export const useSiteDataEdit = () => {
     imageFiles: [],
     imagePreviews: [],
     existingImageIds: [],
-    existingImageUrls: []
+    existingImageUrls: [],
+    documentFiles: [],
+    existingDocumentIds: [],
+    existingDocumentUrls: []
   });
 
   // 現場支出編集用の状態
@@ -52,7 +66,10 @@ export const useSiteDataEdit = () => {
     imageFiles: [],
     imagePreviews: [],
     existingImageIds: [],
-    existingImageUrls: []
+    existingImageUrls: [],
+    documentFiles: [],
+    existingDocumentIds: [],
+    existingDocumentUrls: []
   });
 
   // 現場収入編集開始
@@ -65,7 +82,10 @@ export const useSiteDataEdit = () => {
       imageFiles: [],
       imagePreviews: [],
       existingImageIds: income.imageIds || [],
-      existingImageUrls: income.imageUrls || []
+      existingImageUrls: income.imageUrls || [],
+      documentFiles: [],
+      existingDocumentIds: income.documentIds || [],
+      existingDocumentUrls: income.documentUrls || []
     });
   };
 
@@ -85,7 +105,10 @@ export const useSiteDataEdit = () => {
       imageFiles: [],
       imagePreviews: [],
       existingImageIds: expense.imageIds || [],
-      existingImageUrls: expense.imageUrls || []
+      existingImageUrls: expense.imageUrls || [],
+      documentFiles: [],
+      existingDocumentIds: expense.documentIds || [],
+      existingDocumentUrls: expense.documentUrls || []
     };
     console.log('📝 支出編集フォーム設定', newForm);
     setExpenseEditForm(newForm);
@@ -100,7 +123,10 @@ export const useSiteDataEdit = () => {
       imageFiles: [],
       imagePreviews: [],
       existingImageIds: [],
-      existingImageUrls: []
+      existingImageUrls: [],
+      documentFiles: [],
+      existingDocumentIds: [],
+      existingDocumentUrls: []
     });
   };
 
@@ -113,7 +139,10 @@ export const useSiteDataEdit = () => {
       imageFiles: [],
       imagePreviews: [],
       existingImageIds: [],
-      existingImageUrls: []
+      existingImageUrls: [],
+      documentFiles: [],
+      existingDocumentIds: [],
+      existingDocumentUrls: []
     });
   };
 
@@ -298,6 +327,9 @@ export const useSiteDataEdit = () => {
     try {
       let newImageIds: string[] = [];
       let newImageUrls: string[] = [];
+      let newDocumentIds: string[] = [];
+      let newDocumentUrls: string[] = [];
+      let combinedSaveReport = '';
 
       // 新しい画像がある場合は保存処理
       if (incomeEditForm.imageFiles && incomeEditForm.imageFiles.length > 0) {
@@ -316,17 +348,82 @@ export const useSiteDataEdit = () => {
         }
       }
 
-      // 最終的な画像データを計算（削除されたものは除外）
+      // 新しい書類がある場合は保存処理
+      if (incomeEditForm.documentFiles && incomeEditForm.documentFiles.length > 0) {
+        try {
+          console.log('📄 現場収入書類ハイブリッド保存開始', {
+            transactionId: editingIncome.id,
+            fileCount: incomeEditForm.documentFiles.length
+          });
+          
+          const results = await saveDocumentsHybridBatch(editingIncome.id, incomeEditForm.documentFiles);
+          newDocumentIds = results.filter(r => r.documentId).map(r => r.documentId!);
+          newDocumentUrls = results.filter(r => r.documentUrl).map(r => r.documentUrl!);
+          
+          const localCount = results.filter(r => r.saveMethod === 'local').length;
+          const firebaseCount = results.filter(r => r.saveMethod === 'firebase').length;
+          
+          combinedSaveReport = `書類${results.length}件保存完了`;
+          if (localCount > 0 && firebaseCount > 0) {
+            combinedSaveReport += ` (クラウド: ${firebaseCount}件、ローカル: ${localCount}件)`;
+          } else if (firebaseCount > 0) {
+            combinedSaveReport += ` (クラウド保存・デバイス間同期対応)`;
+          } else if (localCount > 0) {
+            combinedSaveReport += ` (ローカル保存・Firebase準備中)`;
+          }
+          
+          console.log('✅ 現場収入書類ハイブリッド保存完了', {
+            成功数: results.length,
+            ローカル: localCount,
+            Firebase: firebaseCount,
+            documentIds: newDocumentIds,
+            documentUrls: newDocumentUrls
+          });
+        } catch (documentError) {
+          console.error('書類保存エラー:', documentError);
+          showError(`書類の保存に失敗しました: ${documentError}`);
+          return; // 書類保存失敗時は処理を中断
+        }
+      }
+
+      // 最終的なファイルデータを計算（削除されたものは除外）
       const allImageIds = [...incomeEditForm.existingImageIds, ...newImageIds];
       const allImageUrls = [...incomeEditForm.existingImageUrls, ...newImageUrls];
+      const allDocumentIds = [...incomeEditForm.existingDocumentIds, ...newDocumentIds];
+      const allDocumentUrls = [...incomeEditForm.existingDocumentUrls, ...newDocumentUrls];
 
-      console.log('🖼️ 収入画像データ計算', {
+      // 削除されたファイルのログ出力と処理
+      const originalDocumentIds = editingIncome.documentIds || [];
+      const originalDocumentUrls = editingIncome.documentUrls || [];
+      const deletedDocumentIds = originalDocumentIds.filter(id => !allDocumentIds.includes(id));
+      const deletedDocumentUrls = originalDocumentUrls.filter(url => !allDocumentUrls.includes(url));
+      
+      if (deletedDocumentIds.length > 0) {
+        console.log('🗑️ 削除された収入書類ID', deletedDocumentIds);
+        deletedDocumentIds.forEach(documentId => {
+          deleteDocumentFromLocalStorage(editingIncome.id, documentId);
+        });
+      }
+
+      if (deletedDocumentUrls.length > 0) {
+        console.log('🗑️ 削除された収入書類URL', deletedDocumentUrls);
+      }
+
+      console.log('🖼️📄 収入ファイルデータ計算', {
         existingImageIds: incomeEditForm.existingImageIds,
         existingImageUrls: incomeEditForm.existingImageUrls,
+        existingDocumentIds: incomeEditForm.existingDocumentIds,
+        existingDocumentUrls: incomeEditForm.existingDocumentUrls,
         newImageIds,
         newImageUrls,
+        newDocumentIds,
+        newDocumentUrls,
         allImageIds,
-        allImageUrls
+        allImageUrls,
+        allDocumentIds,
+        allDocumentUrls,
+        deletedDocumentIds,
+        deletedDocumentUrls
       });
 
       const updateData: any = {
@@ -334,16 +431,21 @@ export const useSiteDataEdit = () => {
         content: incomeEditForm.content
       };
 
-      // 画像データがある場合は追加（空の配列でも設定して削除を反映）
+      // ファイルデータを追加（空の配列でも設定して削除を反映）
       updateData.imageIds = allImageIds;
       updateData.imageUrls = allImageUrls;
+      updateData.documentIds = allDocumentIds;
+      updateData.documentUrls = allDocumentUrls;
       
       console.log('💾 現場収入更新データ', updateData);
       
       await updateSiteIncome(editingIncome.id, updateData);
       console.log('✅ 現場収入更新完了');
       
-      showSuccess('現場収入を更新しました！');
+      const successMessage = combinedSaveReport ? 
+        `現場収入を更新しました！${combinedSaveReport}` : 
+        '現場収入を更新しました！';
+      showSuccess(successMessage);
       setEditingIncome(null);
       setIncomeEditForm({ 
         amount: '', 
@@ -351,7 +453,10 @@ export const useSiteDataEdit = () => {
         imageFiles: [],
         imagePreviews: [],
         existingImageIds: [],
-        existingImageUrls: []
+        existingImageUrls: [],
+        documentFiles: [],
+        existingDocumentIds: [],
+        existingDocumentUrls: []
       });
     } catch (error: any) {
       console.error('❌ 現場収入編集保存エラー', error);
@@ -387,6 +492,9 @@ export const useSiteDataEdit = () => {
     try {
       let newImageIds: string[] = [];
       let newImageUrls: string[] = [];
+      let newDocumentIds: string[] = [];
+      let newDocumentUrls: string[] = [];
+      let combinedSaveReport = '';
 
       // 新しい画像がある場合は保存処理
       if (expenseEditForm.imageFiles && expenseEditForm.imageFiles.length > 0) {
@@ -405,17 +513,82 @@ export const useSiteDataEdit = () => {
         }
       }
 
-      // 最終的な画像データを計算（削除されたものは除外）
+      // 新しい書類がある場合は保存処理
+      if (expenseEditForm.documentFiles && expenseEditForm.documentFiles.length > 0) {
+        try {
+          console.log('📄 現場支出書類ハイブリッド保存開始', {
+            transactionId: editingExpense.id,
+            fileCount: expenseEditForm.documentFiles.length
+          });
+          
+          const results = await saveDocumentsHybridBatch(editingExpense.id, expenseEditForm.documentFiles);
+          newDocumentIds = results.filter(r => r.documentId).map(r => r.documentId!);
+          newDocumentUrls = results.filter(r => r.documentUrl).map(r => r.documentUrl!);
+          
+          const localCount = results.filter(r => r.saveMethod === 'local').length;
+          const firebaseCount = results.filter(r => r.saveMethod === 'firebase').length;
+          
+          combinedSaveReport = `書類${results.length}件保存完了`;
+          if (localCount > 0 && firebaseCount > 0) {
+            combinedSaveReport += ` (クラウド: ${firebaseCount}件、ローカル: ${localCount}件)`;
+          } else if (firebaseCount > 0) {
+            combinedSaveReport += ` (クラウド保存・デバイス間同期対応)`;
+          } else if (localCount > 0) {
+            combinedSaveReport += ` (ローカル保存・Firebase準備中)`;
+          }
+          
+          console.log('✅ 現場支出書類ハイブリッド保存完了', {
+            成功数: results.length,
+            ローカル: localCount,
+            Firebase: firebaseCount,
+            documentIds: newDocumentIds,
+            documentUrls: newDocumentUrls
+          });
+        } catch (documentError) {
+          console.error('書類保存エラー:', documentError);
+          showError(`書類の保存に失敗しました: ${documentError}`);
+          return; // 書類保存失敗時は処理を中断
+        }
+      }
+
+      // 最終的なファイルデータを計算（削除されたものは除外）
       const allImageIds = [...expenseEditForm.existingImageIds, ...newImageIds];
       const allImageUrls = [...expenseEditForm.existingImageUrls, ...newImageUrls];
+      const allDocumentIds = [...expenseEditForm.existingDocumentIds, ...newDocumentIds];
+      const allDocumentUrls = [...expenseEditForm.existingDocumentUrls, ...newDocumentUrls];
 
-      console.log('🖼️ 支出画像データ計算', {
+      // 削除されたファイルのログ出力と処理
+      const originalDocumentIds = editingExpense.documentIds || [];
+      const originalDocumentUrls = editingExpense.documentUrls || [];
+      const deletedDocumentIds = originalDocumentIds.filter(id => !allDocumentIds.includes(id));
+      const deletedDocumentUrls = originalDocumentUrls.filter(url => !allDocumentUrls.includes(url));
+      
+      if (deletedDocumentIds.length > 0) {
+        console.log('🗑️ 削除された支出書類ID', deletedDocumentIds);
+        deletedDocumentIds.forEach(documentId => {
+          deleteDocumentFromLocalStorage(editingExpense.id, documentId);
+        });
+      }
+
+      if (deletedDocumentUrls.length > 0) {
+        console.log('🗑️ 削除された支出書類URL', deletedDocumentUrls);
+      }
+
+      console.log('🖼️📄 支出ファイルデータ計算', {
         existingImageIds: expenseEditForm.existingImageIds,
         existingImageUrls: expenseEditForm.existingImageUrls,
+        existingDocumentIds: expenseEditForm.existingDocumentIds,
+        existingDocumentUrls: expenseEditForm.existingDocumentUrls,
         newImageIds,
         newImageUrls,
+        newDocumentIds,
+        newDocumentUrls,
         allImageIds,
-        allImageUrls
+        allImageUrls,
+        allDocumentIds,
+        allDocumentUrls,
+        deletedDocumentIds,
+        deletedDocumentUrls
       });
 
       const updateData: any = {
@@ -424,16 +597,21 @@ export const useSiteDataEdit = () => {
         content: expenseEditForm.content
       };
 
-      // 画像データがある場合は追加（空の配列でも設定して削除を反映）
+      // ファイルデータを追加（空の配列でも設定して削除を反映）
       updateData.imageIds = allImageIds;
       updateData.imageUrls = allImageUrls;
+      updateData.documentIds = allDocumentIds;
+      updateData.documentUrls = allDocumentUrls;
       
       console.log('💾 現場支出更新データ', updateData);
       
       await updateSiteExpense(editingExpense.id, updateData);
       console.log('✅ 現場支出更新完了');
       
-      showSuccess('現場支出を更新しました！');
+      const successMessage = combinedSaveReport ? 
+        `現場支出を更新しました！${combinedSaveReport}` : 
+        '現場支出を更新しました！';
+      showSuccess(successMessage);
       setEditingExpense(null);
       setExpenseEditForm({ 
         amount: '', 
@@ -442,7 +620,10 @@ export const useSiteDataEdit = () => {
         imageFiles: [],
         imagePreviews: [],
         existingImageIds: [],
-        existingImageUrls: []
+        existingImageUrls: [],
+        documentFiles: [],
+        existingDocumentIds: [],
+        existingDocumentUrls: []
       });
     } catch (error: any) {
       console.error('❌ 現場支出編集保存エラー', error);

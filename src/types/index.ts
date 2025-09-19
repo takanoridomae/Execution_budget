@@ -12,7 +12,8 @@ export interface Transaction {
     category: IncomeCategory | ExpenseCategory;
     imageUrls?: string[]; // 後方互換性のため残す（廃止予定）
     imageIds?: string[]; // ローカルストレージ用の画像ID配列
-    
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }
 
 export interface BudgetSettings {
@@ -51,6 +52,8 @@ export interface Site {
     updatedAt: string;
     imageUrls?: string[]; // Firebase Storageの画像URL配列
     imageIds?: string[];  // ローカルストレージ用の画像ID配列
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }
 
 // 現場別カテゴリー
@@ -66,6 +69,8 @@ export interface SiteCategory {
     updatedAt: string;
     imageUrls?: string[]; // Firebase Storageの画像URL配列
     imageIds?: string[];  // ローカルストレージ用の画像ID配列
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }
 
 // 現場別予算設定
@@ -106,6 +111,8 @@ export interface SiteIncome {
     category: '売上'; // 固定値
     imageUrls?: string[];
     imageIds?: string[];
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }
 
 // 現場別支出トランザクション（支出専用）
@@ -119,4 +126,6 @@ export interface SiteExpense {
     categoryId: string; // カテゴリーIDを参照
     imageUrls?: string[];
     imageIds?: string[];
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }

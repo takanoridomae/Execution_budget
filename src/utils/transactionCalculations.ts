@@ -288,3 +288,64 @@ export const calculateSiteBudgetRemaining = (
   return totalBudget - totalExpenses;
 };
 
+/**
+ * カテゴリー別の支出実績を計算（累計）
+ */
+export const calculateTotalCategoryExpenses = (
+  siteExpenses: import('../types').SiteExpense[], 
+  categoryId: string,
+  siteId?: string
+) => {
+  if (!siteExpenses || siteExpenses.length === 0) {
+    return 0;
+  }
+  
+  let filteredExpenses = siteExpenses.filter(expense => {
+    if (!expense.categoryId || !expense.date) {
+      return false;
+    }
+    
+    const expenseDate = new Date(expense.date);
+    // 無効な日付をチェック
+    if (isNaN(expenseDate.getTime())) {
+      return false;
+    }
+    
+    return expense.categoryId === categoryId;
+  });
+  
+  if (siteId) {
+    filteredExpenses = filteredExpenses.filter(expense => expense.siteId === siteId);
+  }
+  
+  return filteredExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+};
+
+/**
+ * 現場の実績合計を計算（累計）
+ */
+export const calculateTotalSiteExpenses = (
+  siteExpenses: import('../types').SiteExpense[],
+  siteId: string
+) => {
+  if (!siteExpenses || siteExpenses.length === 0) {
+    return 0;
+  }
+  
+  const filteredExpenses = siteExpenses.filter(expense => {
+    if (!expense.siteId || !expense.date) {
+      return false;
+    }
+    
+    const expenseDate = new Date(expense.date);
+    // 無効な日付をチェック
+    if (isNaN(expenseDate.getTime())) {
+      return false;
+    }
+    
+    return expense.siteId === siteId;
+  });
+  
+  return filteredExpenses.reduce((total, expense) => total + (expense.amount || 0), 0);
+};
+

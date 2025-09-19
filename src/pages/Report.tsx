@@ -1,244 +1,80 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Card, CardHeader, CardContent, Button, FormControl, Select, MenuItem, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody, InputLabel, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
-import { PieChart, Pie, Cell, Tooltip, Legend as ReLegend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
-import { Photo, Close } from '@mui/icons-material';
+import { Photo, Close, Article } from '@mui/icons-material';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useCategories } from '../contexts/CategoryContext';
+import { useSites } from '../contexts/SiteContext';
 import { getImageFromLocalStorage } from '../utils/imageUtils';
-import { formatDateKey } from '../utils/dateUtils';
 import { formatCurrency } from '../utils/numberUtils';
-import { useBudget } from '../contexts/BudgetContext';
 
-type BreakdownType = 'income' | 'expense';
 
 const Report: React.FC = () => {
-  const { transactions, selectedDate, siteExpenses, siteIncomes } = useTransactions();
-  const { categories } = useCategories();
-  // Default to hide income for daily view and expense-based breakdown for pie chart
-  const [showIncome, setShowIncome] = useState<boolean>(() => {
-    try {
-      const v = localStorage.getItem('report_day_income_visible');
-      if (v !== null) return v === 'true';
-    } catch { /* ignore */ }
-    return false;
-  });
-  const [breakdownType, setBreakdownType] = useState<BreakdownType>(() => {
-    try {
-      const v = localStorage.getItem('report_pie_breakdown_type');
-      if (v === 'income' || v === 'expense') return v as BreakdownType;
-    } catch { /* ignore */ }
-    return 'expense';
-  });
+  const { siteExpenses, siteIncomes } = useTransactions();
+  const { categories, getActiveCategoriesBySite } = useCategories();
+  const { sites } = useSites();
+
+  // 検索フィルター用状態
+  const [filterSiteId, setFilterSiteId] = useState<string>('');
+  const [filterCategoryId, setFilterCategoryId] = useState<string>('');
+  const [filterYear, setFilterYear] = useState<string>(''); // 空文字=すべて
+  const [filterMonth, setFilterMonth] = useState<string>(''); // 空文字=すべて
   
-  // 円グラフの表示形式（金額/パーセント）切り替え状態
-  const [pieDisplayMode, setPieDisplayMode] = useState<'amount' | 'percentage'>(() => {
-    try {
-      const v = localStorage.getItem('report_pie_display_mode');
-      if (v === 'amount' || v === 'percentage') return v as 'amount' | 'percentage';
-    } catch { /* ignore */ }
-    return 'amount';
-  });
-  // Persist breakdown type
-  useEffect(() => {
-    try {
-      localStorage.setItem('report_pie_breakdown_type', breakdownType);
-    } catch { /* ignore */ }
-  }, [breakdownType]);
-  
-  // Persist pie display mode
-  useEffect(() => {
-    try {
-      localStorage.setItem('report_pie_display_mode', pieDisplayMode);
-    } catch { /* ignore */ }
-  }, [pieDisplayMode]);
-  // Restore initial breakdown type
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem('report_pie_breakdown_type');
-      if (v === 'income' || v === 'expense') {
-        setBreakdownType(v);
+  // 支出データから動的に年月オプションを生成
+  const availableYearMonths = useMemo(() => {
+    const yearMonthSet = new Set<string>();
+    
+    // 支出データから年月を抽出
+    (siteExpenses ?? []).forEach(expense => {
+      if (expense.date) {
+        const yearMonth = expense.date.substring(0, 7); // "YYYY-MM" 形式
+        yearMonthSet.add(yearMonth);
       }
-    } catch {
-      // ignore
-    }
-  }, []);
-  // Persist day-income visibility
-  useEffect(() => {
-    try {
-      localStorage.setItem('report_day_income_visible', String(showIncome));
-    } catch { /* ignore */ }
-  }, [showIncome]);
-  // Restore day-income visibility
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem('report_day_income_visible');
-      if (v !== null) {
-        setShowIncome(v === 'true');
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // UI: current month view
-  // Restore last viewed year/month from localStorage, fallback to current date
-  const [viewDate, setViewDate] = useState<Date>(() => {
-    try {
-      const stored = localStorage.getItem('report_last_viewed_year_month');
-      if (stored) {
-        const [y, m] = stored.split('-').map(Number);
-        if (!Number.isNaN(y) && !Number.isNaN(m)) {
-          return new Date(y, m - 1, 1);
-        }
-      }
-    } catch { /* ignore */ }
-    return new Date();
-  });
-  const [selectedYear, setSelectedYear] = useState<number>(viewDate.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(viewDate.getMonth() + 1);
-  
-  // Year/Month options
-  const yearOptions = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-  const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
-
-  // Sync UI selections with viewDate
-  useEffect(() => {
-    // construct first day of selected year/month
-    const newDate = new Date(selectedYear, selectedMonth - 1, 1);
-    setViewDate(newDate);
-  }, [selectedYear, selectedMonth]);
-
-  // Reflect changes in viewDate back to selects when navigation buttons modify the date
-  useEffect(() => {
-    setSelectedYear(viewDate.getFullYear());
-    setSelectedMonth(viewDate.getMonth() + 1);
-  }, [viewDate]);
-  
-  // Update selects to parse current viewDate on init/prop changes
-  useEffect(() => {
-    setSelectedYear(viewDate.getFullYear());
-    setSelectedMonth(viewDate.getMonth() + 1);
-  }, []);
-  
-  // Handlers for year/month changes
-  const onYearChange = (e: any) => setSelectedYear(Number(e.target.value));
-  const onMonthChange = (e: any) => setSelectedMonth(Number(e.target.value));
-
-  // getBudgetSettingsは削除されました（現場ベース管理に移行）
-  // const { getBudgetSettings } = useBudget();
-
-  useEffect(() => {
-    const base = selectedDate ?? new Date();
-    const newDate = new Date(base.getFullYear(), base.getMonth(), 1);
-    setViewDate(newDate);
-  }, [selectedDate]);
-
-  // Persist last viewed (year, month) - not restoring on load to avoid unexpected initializations
-  useEffect(() => {
-    try {
-      localStorage.setItem('report_last_viewed_year_month', `${viewDate.getFullYear()}-${viewDate.getMonth() + 1}`);
-    } catch {
-      // ignore
-    }
-  }, [viewDate]);
-
-  // Extra guard: on mount, re-apply persisted UI state to avoid potential initialization drift
-  useEffect(() => {
-    try {
-      const savedPie = localStorage.getItem('report_pie_breakdown_type');
-      if (savedPie === 'income' || savedPie === 'expense') {
-        setBreakdownType(savedPie);
-      }
-      const savedPieDisplayMode = localStorage.getItem('report_pie_display_mode');
-      if (savedPieDisplayMode === 'amount' || savedPieDisplayMode === 'percentage') {
-        setPieDisplayMode(savedPieDisplayMode);
-      }
-      const savedIncome = localStorage.getItem('report_day_income_visible');
-      if (savedIncome !== null) {
-        setShowIncome(savedIncome === 'true');
-      }
-      const savedLastViewed = localStorage.getItem('report_last_viewed_year_month');
-      if (savedLastViewed) {
-        const [y, m] = savedLastViewed.split('-').map(Number);
-        if (!Number.isNaN(y) && !Number.isNaN(m)) {
-          setViewDate(new Date(y, m - 1, 1));
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => { try { localStorage.setItem('report_day_income_visible', String(showIncome)); } catch { } }, [showIncome]);
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth() + 1;
-  const daysInMonth = new Date(year, month, 0).getDate();
-
-  const monthStart = formatDateKey(year, month, 1);
-  const monthEnd = formatDateKey(year, month, daysInMonth);
-  
-  // 新しい現場ベースデータを使用
-  const monthIncomes = (siteIncomes ?? []).filter((t) => t.date >= monthStart && t.date <= monthEnd);
-  const monthExpenses = (siteExpenses ?? []).filter((t) => t.date >= monthStart && t.date <= monthEnd);
-  
-  const incomeTotal = monthIncomes.reduce((s, t) => s + t.amount, 0);
-  const expenseTotal = monthExpenses.reduce((s, t) => s + t.amount, 0);
-
-  // 現場ベースデータでカテゴリー別集計
-  const byCategory: Record<string, number> = {};
-  
-  if (breakdownType === 'income') {
-    monthIncomes.forEach((t) => {
-      const key = t.category; // SiteIncomeは固定で'売上'
-      byCategory[key] = (byCategory[key] ?? 0) + t.amount;
     });
-  } else {
-    monthExpenses.forEach((t) => {
-      const category = categories.find(c => c.id === t.categoryId);
-      const key = category?.name || '不明なカテゴリー';
-      byCategory[key] = (byCategory[key] ?? 0) + t.amount;
+    
+    // 収入データからも年月を抽出
+    (siteIncomes ?? []).forEach(income => {
+      if (income.date) {
+        const yearMonth = income.date.substring(0, 7); // "YYYY-MM" 形式
+        yearMonthSet.add(yearMonth);
+      }
     });
-  }
+    
+    // 現在の年月も含める
+    const currentDate = new Date();
+    const currentYearMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    yearMonthSet.add(currentYearMonth);
+    
+    // ソートして配列に変換
+    return Array.from(yearMonthSet).sort().reverse(); // 新しい順
+  }, [siteExpenses, siteIncomes]);
   
-  // 合計値を計算（パーセンテージ表示用）
-  const totalAmount = Object.values(byCategory).reduce((sum, amount) => sum + amount, 0);
+  // 年オプションを生成
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>();
+    availableYearMonths.forEach(yearMonth => {
+      const year = parseInt(yearMonth.split('-')[0]);
+      years.add(year);
+    });
+    return Array.from(years).sort().reverse(); // 新しい順
+  }, [availableYearMonths]);
   
-  // 表示形式に応じてデータを変換
-  const pieData = Object.entries(byCategory).map(([name, value]) => ({
-    name,
-    value,
-    displayValue: pieDisplayMode === 'percentage' 
-      ? totalAmount > 0 ? ((value / totalAmount) * 100) : 0
-      : value,
-    formattedDisplay: pieDisplayMode === 'percentage'
-      ? totalAmount > 0 ? `${((value / totalAmount) * 100).toFixed(1)}%` : '0%'
-      : formatCurrency(value)
-  }));
+  // 選択された現場に対応するカテゴリーを取得
+  const availableCategories = useMemo(() => {
+    if (!filterSiteId) {
+      // 現場が選択されていない場合は全てのカテゴリー
+      return categories.filter(cat => cat.isActive);
+    }
+    // 選択された現場のアクティブなカテゴリーのみ
+    return getActiveCategoriesBySite(filterSiteId);
+  }, [filterSiteId, categories, getActiveCategoriesBySite]);
+  
+  // 現場フィルターが変更された時にカテゴリーフィルターをリセット
+  useEffect(() => {
+    if (filterSiteId && !availableCategories.some(cat => cat.id === filterCategoryId)) {
+      setFilterCategoryId('');
+    }
+  }, [filterSiteId, availableCategories, filterCategoryId]);
 
-  const dayData = Array.from({ length: daysInMonth }, (_, i) => {
-    const d = i + 1;
-    const dayKey = formatDateKey(year, month, d);
-    const incomeDay = monthIncomes.filter((t) => t.date === dayKey).reduce((s, t) => s + t.amount, 0);
-    const expenseDay = monthExpenses.filter((t) => t.date === dayKey).reduce((s, t) => s + t.amount, 0);
-    return { day: d, income: incomeDay, expense: expenseDay };
-  });
-
-  const monthLabel = `${year}年${month}月`;
-
-  // 現場ベース管理に移行したため、一時的に無効化
-  const budgetInfo = { monthlyBudget: 0, savingsGoal: 0, breakdown: [] };
-  const budgetForMonth = budgetInfo?.monthlyBudget ?? 0;
-  const remainingBudget = budgetForMonth - expenseTotal;
-  const todayDate = new Date();
-  const isCurrentMonth = todayDate.getFullYear() === year && todayDate.getMonth() + 1 === month;
-  const remainingDays = isCurrentMonth ? Math.max(1, daysInMonth - todayDate.getDate() + 1) : daysInMonth;
-  const dailyUsableAmount = remainingDays > 0 ? Math.floor(remainingBudget / remainingDays) : 0;
-
-  const goPrevMonth = () => setViewDate(new Date(year, month - 2, 1));
-  const goNextMonth = () => setViewDate(new Date(year, month, 1));
-
-  const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#8dd3c7', '#a6cee3'];
   // 日付ソート用状態
   const [expenseSortOrder, setExpenseSortOrder] = useState<'asc'|'desc'>('asc');
   
@@ -246,7 +82,35 @@ const Report: React.FC = () => {
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // 書類表示用状態
+  const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
+  
   const toggleExpenseSort = () => setExpenseSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+  
+  // 現場別の色を決定する関数
+  const getSiteColor = (siteId: string) => {
+    const siteColors = [
+      { bg: '#e3f2fd', color: '#0d47a1' }, // 青系
+      { bg: '#e8f5e8', color: '#1b5e20' }, // 緑系
+      { bg: '#fff3e0', color: '#e65100' }, // オレンジ系
+      { bg: '#fce4ec', color: '#880e4f' }, // ピンク系
+      { bg: '#f3e5f5', color: '#4a148c' }, // 紫系
+      { bg: '#e0f2f1', color: '#00695c' }, // ティール系
+      { bg: '#fff8e1', color: '#ff6f00' }, // アンバー系
+      { bg: '#efebe9', color: '#3e2723' }, // ブラウン系
+    ];
+    
+    // siteIdのハッシュを使って色を決定
+    let hash = 0;
+    for (let i = 0; i < siteId.length; i++) {
+      hash = siteId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % siteColors.length;
+    return siteColors[index];
+  };
   
   // 画像表示ハンドラー
   const handleImageClick = (transaction: any) => {
@@ -286,112 +150,321 @@ const Report: React.FC = () => {
     setCurrentImageIndex((prev) => (prev < selectedImages.length - 1 ? prev + 1 : 0));
   };
   
+  // 書類表示ハンドラー
+  const handleDocumentClick = (transaction: any) => {
+    const documents: string[] = [];
+    
+    // Firebase Storageの書類を追加
+    if (transaction.documentUrls) {
+      documents.push(...transaction.documentUrls);
+    }
+    
+    // ローカルストレージの書類は今回は簡略化（実装時は documentUtils を使用）
+    
+    setSelectedDocuments(documents);
+    setCurrentDocumentIndex(0);
+    setDocumentDialogOpen(true);
+  };
+
+  const handleCloseDocumentDialog = () => {
+    setDocumentDialogOpen(false);
+    setSelectedDocuments([]);
+    setCurrentDocumentIndex(0);
+  };
+
+  const handlePrevDocument = () => {
+    setCurrentDocumentIndex((prev) => (prev > 0 ? prev - 1 : selectedDocuments.length - 1));
+  };
+
+  const handleNextDocument = () => {
+    setCurrentDocumentIndex((prev) => (prev < selectedDocuments.length - 1 ? prev + 1 : 0));
+  };
+  
   const sortedExpenseTx = useMemo(() => {
-    const expenses = monthExpenses ?? [];
-    const sorted = [...expenses].sort((a, b) => a.date.localeCompare(b.date));
+    // 全支出データから検索
+    const expenses = siteExpenses ?? [];
+    
+    // フィルターを適用
+    const filteredExpenses = expenses.filter((expense) => {
+      // 年フィルター
+      if (filterYear) {
+        const expenseYear = expense.date.substring(0, 4);
+        if (expenseYear !== filterYear) {
+          return false;
+        }
+      }
+      
+      // 月フィルター
+      if (filterMonth) {
+        const expenseMonth = expense.date.substring(5, 7);
+        if (expenseMonth !== filterMonth.padStart(2, '0')) {
+          return false;
+        }
+      }
+      
+      // 現場フィルター
+      if (filterSiteId && expense.siteId !== filterSiteId) {
+        return false;
+      }
+      
+      // カテゴリーフィルター
+      if (filterCategoryId && expense.categoryId !== filterCategoryId) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    const sorted = [...filteredExpenses].sort((a, b) => a.date.localeCompare(b.date));
     return expenseSortOrder === 'asc' ? sorted : [...sorted].reverse();
-  }, [monthExpenses, expenseSortOrder]);
+  }, [siteExpenses, expenseSortOrder, filterYear, filterMonth, filterSiteId, filterCategoryId]);
+  
+  // 収入明細のフィルタリング
+  const sortedIncomeTx = useMemo(() => {
+    // 全収入データから検索
+    const incomes = siteIncomes ?? [];
+    
+    // フィルターを適用
+    const filteredIncomes = incomes.filter((income) => {
+      // 年フィルター
+      if (filterYear) {
+        const incomeYear = income.date.substring(0, 4);
+        if (incomeYear !== filterYear) {
+          return false;
+        }
+      }
+      
+      // 月フィルター
+      if (filterMonth) {
+        const incomeMonth = income.date.substring(5, 7);
+        if (incomeMonth !== filterMonth.padStart(2, '0')) {
+          return false;
+        }
+      }
+      
+      // 現場フィルター
+      if (filterSiteId && income.siteId !== filterSiteId) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    const sorted = [...filteredIncomes].sort((a, b) => a.date.localeCompare(b.date));
+    return expenseSortOrder === 'asc' ? sorted : [...sorted].reverse();
+  }, [siteIncomes, expenseSortOrder, filterYear, filterMonth, filterSiteId]);
+  
+  // 支出の検索結果サマリー情報を計算
+  const expenseSummary = useMemo(() => {
+    const totalAmount = sortedExpenseTx.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalCount = sortedExpenseTx.length;
+    
+    // 現場別集計
+    const bySite: Record<string, { amount: number; count: number; siteName: string; siteId: string }> = {};
+    sortedExpenseTx.forEach(expense => {
+      const site = sites.find(s => s.id === expense.siteId);
+      const siteName = site?.name || '不明な現場';
+      const key = expense.siteId;
+      
+      if (!bySite[key]) {
+        bySite[key] = { amount: 0, count: 0, siteName, siteId: expense.siteId };
+      }
+      bySite[key].amount += expense.amount;
+      bySite[key].count += 1;
+    });
+    
+    // カテゴリー別集計
+    const byCategory: Record<string, { amount: number; count: number; categoryName: string }> = {};
+    sortedExpenseTx.forEach(expense => {
+      const category = categories.find(c => c.id === expense.categoryId);
+      const categoryName = category?.name || '不明なカテゴリー';
+      const key = expense.categoryId;
+      
+      if (!byCategory[key]) {
+        byCategory[key] = { amount: 0, count: 0, categoryName };
+      }
+      byCategory[key].amount += expense.amount;
+      byCategory[key].count += 1;
+    });
+    
+    return {
+      totalAmount,
+      totalCount,
+      bySite: Object.values(bySite).sort((a, b) => b.amount - a.amount),
+      byCategory: Object.values(byCategory).sort((a, b) => b.amount - a.amount)
+    };
+  }, [sortedExpenseTx, sites, categories]);
+  
+  // 収入の検索結果サマリー情報を計算
+  const incomeSummary = useMemo(() => {
+    const totalAmount = sortedIncomeTx.reduce((sum, income) => sum + income.amount, 0);
+    const totalCount = sortedIncomeTx.length;
+    
+    // 現場別集計
+    const bySite: Record<string, { amount: number; count: number; siteName: string; siteId: string }> = {};
+    sortedIncomeTx.forEach(income => {
+      const site = sites.find(s => s.id === income.siteId);
+      const siteName = site?.name || '不明な現場';
+      const key = income.siteId;
+      
+      if (!bySite[key]) {
+        bySite[key] = { amount: 0, count: 0, siteName, siteId: income.siteId };
+      }
+      bySite[key].amount += income.amount;
+      bySite[key].count += 1;
+    });
+    
+    return {
+      totalAmount,
+      totalCount,
+      bySite: Object.values(bySite).sort((a, b) => b.amount - a.amount)
+    };
+  }, [sortedIncomeTx, sites]);
 
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Button variant="contained" color="error" onClick={goPrevMonth}>先月</Button>
-          <Button variant="contained" color="primary" onClick={goNextMonth} sx={{ ml: 1 }}>次月</Button>
-        </Box>
+        {/* 検索フィルター */}
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { sm: 'center' } }}>
           <FormControl sx={{ minWidth: 120 }}>
             <InputLabel shrink={true}>年</InputLabel>
-            <Select value={selectedYear} onChange={onYearChange} label="年">
+            <Select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} label="年">
+              <MenuItem value="">すべて</MenuItem>
               {yearOptions.map((y) => (
-                <MenuItem key={y} value={y}>{y}年</MenuItem>
+                <MenuItem key={y} value={y.toString()}>{y}年</MenuItem>
               ))}
             </Select>
           </FormControl>
           <FormControl sx={{ minWidth: 120 }}>
             <InputLabel shrink={true}>月</InputLabel>
-            <Select value={selectedMonth} onChange={onMonthChange} label="月">
-              {monthOptions.map((m) => (
-                <MenuItem key={m} value={m}>{m}月</MenuItem>
+            <Select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} label="月">
+              <MenuItem value="">すべて</MenuItem>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <MenuItem key={m} value={m.toString()}>{m}月</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ minWidth: 150 }}>
+            <InputLabel shrink={true}>現場</InputLabel>
+            <Select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} label="現場">
+              <MenuItem value="">すべての現場</MenuItem>
+              {sites.filter(site => site.isActive).map((site) => (
+                <MenuItem key={site.id} value={site.id}>{site.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ minWidth: 150 }}>
+            <InputLabel shrink={true}>カテゴリー</InputLabel>
+            <Select value={filterCategoryId} onChange={(e) => setFilterCategoryId(e.target.value)} label="カテゴリー">
+              <MenuItem value="">すべてのカテゴリー</MenuItem>
+              {availableCategories.map((category) => (
+                <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
         </Box>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+      {/* 検索結果サマリー */}
+      <Box sx={{ mb: 3 }}>
         <Card>
-          <CardHeader title="内訳（円グラフ）" subheader="選択月の収支をカテゴリ別に表示" />
+          <CardHeader title="検索結果サマリー" subheader={`支出${expenseSummary.totalCount}件 / 収入${incomeSummary.totalCount}件`} />
           <CardContent>
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, gap: 2, mb: 1 }}>
-              <FormControl sx={{ minWidth: 180 }}>
-                <Select value={breakdownType} onChange={(e) => setBreakdownType(e.target.value as BreakdownType)}>
-                  <MenuItem value="income">収入で内訳</MenuItem>
-                  <MenuItem value="expense">支出で内訳</MenuItem>
-                </Select>
-              </FormControl>
-              <Button 
-                variant="outlined" 
-                size="small" 
-                onClick={() => setPieDisplayMode(pieDisplayMode === 'amount' ? 'percentage' : 'amount')}
-                sx={{ minWidth: 120 }}
-              >
-                {pieDisplayMode === 'amount' ? '％表示' : '金額表示'}
-              </Button>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+              {/* 支出サマリー */}
+              <Box>
+                <Box sx={{ fontSize: '1.1rem', fontWeight: 'bold', mb: 2, color: '#f44336' }}>
+                  支出合計: {formatCurrency(expenseSummary.totalAmount)}
+                </Box>
+                
+                {/* 支出現場別集計 */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>支出現場別集計</Box>
+                  {expenseSummary.bySite.map((site) => {
+                    const siteColor = getSiteColor(site.siteId);
+                    return (
+                      <Box key={site.siteName} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                        <Box>{site.siteName}</Box>
+                        <Box sx={{ 
+                          backgroundColor: siteColor.bg, 
+                          color: siteColor.color, 
+                          px: 1, 
+                          py: 0.5, 
+                          borderRadius: 1, 
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem'
+                        }}>
+                          {formatCurrency(site.amount)} ({site.count}件)
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+                
+                {/* カテゴリー別集計 */}
+                <Box>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>カテゴリー別集計</Box>
+                  {expenseSummary.byCategory.map((category) => (
+                    <Box key={category.categoryName} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                      <Box>{category.categoryName}</Box>
+                      <Box sx={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                        {formatCurrency(category.amount)} ({category.count}件)
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+              
+              {/* 収入サマリー */}
+              <Box>
+                <Box sx={{ fontSize: '1.1rem', fontWeight: 'bold', mb: 2, color: '#4caf50' }}>
+                  収入合計: {formatCurrency(incomeSummary.totalAmount)}
+                </Box>
+                
+                {/* 収入現場別集計 */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>収入現場別集計</Box>
+                  {incomeSummary.bySite.map((site) => {
+                    const siteColor = getSiteColor(site.siteId);
+                    return (
+                      <Box key={site.siteName} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                        <Box>{site.siteName}</Box>
+                        <Box sx={{ 
+                          backgroundColor: siteColor.bg, 
+                          color: siteColor.color, 
+                          px: 1, 
+                          py: 0.5, 
+                          borderRadius: 1, 
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem'
+                        }}>
+                          {formatCurrency(site.amount)} ({site.count}件)
+                        </Box>
+                      </Box>
+                    );
+                  })}
             </Box>
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie 
-                  data={pieData} 
-                  dataKey="displayValue" 
-                  nameKey="name" 
-                  cx="50%" 
-                  cy="50%" 
-                  innerRadius={40} 
-                  outerRadius={90} 
-                  paddingAngle={2} 
-                  label={({ name, formattedDisplay }) => `${name}: ${formattedDisplay}`}
-                >
-                  {pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={colors[index % colors.length]} />))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value, name) => {
-                    const entry = pieData.find(item => item.name === name);
-                    return entry ? [entry.formattedDisplay, name] : [value, name];
-                  }}
-                />
-                <ReLegend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader title="日別収支（棒グラフ）" subheader="日ごとの収入/支出を表示" />
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-              <Button variant="outlined" size="small" onClick={() => setShowIncome((s) => !s)}>
-                {showIncome ? '収入を非表示' : '収入を表示'}
-              </Button>
+                
+                {/* 収支差額 */}
+                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>収支差額</Box>
+                  <Box sx={{ 
+                    fontSize: '1.2rem', 
+                    fontWeight: 'bold',
+                    color: (incomeSummary.totalAmount - expenseSummary.totalAmount) >= 0 ? '#4caf50' : '#f44336'
+                  }}>
+                    {formatCurrency(incomeSummary.totalAmount - expenseSummary.totalAmount)}
+                  </Box>
+                </Box>
+              </Box>
             </Box>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={dayData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                <YAxis />
-                <Tooltip />
-                <ReLegend />
-                {showIncome && <Bar dataKey="income" name="収入" fill="#42a5f5" />}
-                <Bar dataKey="expense" name="支出" fill="#f44336" />
-              </BarChart>
-            </ResponsiveContainer>
           </CardContent>
         </Card>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr' }, gap: 3, mt: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mt: 3 }}>
         <Card>
-          <CardHeader title="支出明細" subheader="今月の支出の詳細を日付・カテゴリ・金額・内容で表示" />
+          <CardHeader title="支出明細" subheader="支出の詳細を日付・現場・カテゴリ・金額・内容で表示" />
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
               <Button variant="outlined" size="small" onClick={toggleExpenseSort}>
@@ -399,26 +472,33 @@ const Report: React.FC = () => {
               </Button>
             </Box>
             <TableContainer component={Paper}>
-              <Table size="small" aria-label="今月の支出明細テーブル">
+              <Table size="small" aria-label="支出明細テーブル">
                 <TableHead>
                   <TableRow>
                     <TableCell>日付</TableCell>
+                    <TableCell>現場</TableCell>
                     <TableCell>カテゴリ</TableCell>
                     <TableCell>金額</TableCell>
-                    <TableCell>詳細</TableCell>
-                    <TableCell>画像</TableCell>
+                    <TableCell>内容（詳細）</TableCell>
+                    <TableCell>写真リンク</TableCell>
+                    <TableCell>書類リンク</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {sortedExpenseTx.map((t) => {
                     const category = categories.find(c => c.id === t.categoryId);
                     const categoryName = category?.name || '不明なカテゴリー';
+                    const site = sites.find(s => s.id === t.siteId);
+                    const siteName = site?.name || '不明な現場';
+                    
+                    const siteColor = getSiteColor(t.siteId);
                     
                     return (
                       <TableRow key={t.id}>
                         <TableCell>{t.date}</TableCell>
+                        <TableCell>{siteName}</TableCell>
                         <TableCell>{categoryName}</TableCell>
-                        <TableCell sx={{ backgroundColor: t.amount >= 2000 ? '#f44336' : t.amount >= 1000 ? '#FFF176' : 'inherit', color: t.amount >= 2000 ? 'white' : t.amount >= 1000 ? 'black' : 'inherit' }}>{formatCurrency(t.amount)}</TableCell>
+                        <TableCell sx={{ backgroundColor: siteColor.bg, color: siteColor.color, fontWeight: 'bold' }}>{formatCurrency(t.amount)}</TableCell>
                         <TableCell>{t.content}</TableCell>
                         <TableCell>
                           {((t.imageIds && t.imageIds.length > 0) || (t.imageUrls && t.imageUrls.length > 0)) ? (
@@ -433,6 +513,19 @@ const Report: React.FC = () => {
                             '-'
                           )}
                         </TableCell>
+                        <TableCell>
+                          {((t.documentIds && t.documentIds.length > 0) || (t.documentUrls && t.documentUrls.length > 0)) ? (
+                            <IconButton
+                              size="small"
+                              color="secondary"
+                              onClick={() => handleDocumentClick(t)}
+                            >
+                              <Article />
+                            </IconButton>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -441,154 +534,73 @@ const Report: React.FC = () => {
             </TableContainer>
           </CardContent>
         </Card>
-
+        
         <Card>
-          <CardHeader title={`${monthLabel}の予算詳細`} subheader="選択月の予算・支出・残額と日割り可能額" />
+          <CardHeader title="収入明細" subheader="収入の詳細を日付・現場・金額・内容で表示" />
           <CardContent>
-            {/* 全体予算サマリー */}
-            <TableContainer component={Paper} sx={{ mb: 3 }}>
-              <Table size="small" aria-label="選択月の予算詳細テーブル">
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+              <Button variant="outlined" size="small" onClick={toggleExpenseSort}>
+                日付: {expenseSortOrder === 'asc' ? '昇順' : '降順'}
+              </Button>
+            </Box>
+            <TableContainer component={Paper}>
+              <Table size="small" aria-label="収入明細テーブル">
                 <TableHead>
                   <TableRow>
-                    <TableCell>選択月予算</TableCell>
-                    <TableCell>選択月支出</TableCell>
-                    <TableCell>選択月予算残</TableCell>
-                    <TableCell>1日あたり使える金額</TableCell>
+                    <TableCell>日付</TableCell>
+                    <TableCell>現場</TableCell>
+                    <TableCell>カテゴリ</TableCell>
+                    <TableCell>金額</TableCell>
+                    <TableCell>内容（詳細）</TableCell>
+                    <TableCell>写真リンク</TableCell>
+                    <TableCell>書類リンク</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  <TableRow>
-                    <TableCell>{formatCurrency(budgetForMonth)}</TableCell>
-                    <TableCell>{formatCurrency(expenseTotal)}</TableCell>
-                    <TableCell 
-                      sx={{
-                        color: remainingBudget < 0 ? '#f44336' : 'inherit',
-                        fontWeight: remainingBudget < 0 ? 'bold' : 'normal'
-                      }}
-                    >
-                      {formatCurrency(remainingBudget)}
-                    </TableCell>
-                    <TableCell>{formatCurrency(dailyUsableAmount)}</TableCell>
-                  </TableRow>
+                  {sortedIncomeTx.map((t) => {
+                    const site = sites.find(s => s.id === t.siteId);
+                    const siteName = site?.name || '不明な現場';
+                    const siteColor = getSiteColor(t.siteId);
+                    
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell>{t.date}</TableCell>
+                        <TableCell>{siteName}</TableCell>
+                        <TableCell>{t.category}</TableCell>
+                        <TableCell sx={{ backgroundColor: siteColor.bg, color: siteColor.color, fontWeight: 'bold' }}>{formatCurrency(t.amount)}</TableCell>
+                        <TableCell>{t.content}</TableCell>
+                        <TableCell>
+                          {((t.imageIds && t.imageIds.length > 0) || (t.imageUrls && t.imageUrls.length > 0)) ? (
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleImageClick(t)}
+                            >
+                              <Photo />
+                            </IconButton>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {((t.documentIds && t.documentIds.length > 0) || (t.documentUrls && t.documentUrls.length > 0)) ? (
+                            <IconButton
+                              size="small"
+                              color="secondary"
+                              onClick={() => handleDocumentClick(t)}
+                            >
+                              <Article />
+                            </IconButton>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
-
-            {/* カテゴリー別予算vs支出 */}
-            {(() => {
-              // 現場ベース管理に移行したため、予算比較機能は簡素化
-              
-              // 支出があるすべてのカテゴリーを取得
-              const expenseCategoryIds = Array.from(new Set(
-                monthExpenses.map(t => t.categoryId)
-              ));
-              
-              // 表示用データを作成（現場ベース管理移行により予算比較は簡素化）
-              const categoryData = expenseCategoryIds.map(categoryId => {
-                const category = categories.find(c => c.id === categoryId);
-                const categoryName = category?.name || '不明なカテゴリー';
-                const budgetAmount = 0; // 現場ベース管理に移行したため一時的に0
-                const categoryExpense = monthExpenses
-                  .filter(t => t.categoryId === categoryId)
-                  .reduce((sum, t) => sum + t.amount, 0);
-                
-                return {
-                  category: categoryName,
-                  budgetAmount,
-                  categoryExpense
-                };
-              }).filter(item => item.categoryExpense > 0 || item.budgetAmount > 0); // 支出があるか予算があるもののみ表示
-              
-              return categoryData.length > 0 ? (
-                <Box>
-                  <Box sx={{ mb: 2, fontSize: '1.1rem', fontWeight: 'bold' }}>
-                    カテゴリー別予算比較
-                  </Box>
-                  <TableContainer component={Paper}>
-                    <Table size="small" aria-label="カテゴリー別予算比較テーブル">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>カテゴリー</TableCell>
-                          <TableCell>予算額</TableCell>
-                          <TableCell>実支出</TableCell>
-                          <TableCell>予算残</TableCell>
-                          <TableCell>進捗率</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {categoryData.map((item) => {
-                          const remaining = item.budgetAmount - item.categoryExpense;
-                          const usageRate = item.budgetAmount > 0 ? (item.categoryExpense / item.budgetAmount) * 100 : 0;
-                          const isOver = remaining < 0;
-                          const isUnbudgeted = item.budgetAmount === 0;
-
-                          return (
-                            <TableRow key={item.category}>
-                              <TableCell>{item.category}</TableCell>
-                              <TableCell 
-                                sx={{ 
-                                  color: isUnbudgeted ? '#9e9e9e' : 'inherit',
-                                  fontStyle: isUnbudgeted ? 'italic' : 'normal'
-                                }}
-                              >
-                                {isUnbudgeted ? '未設定' : formatCurrency(item.budgetAmount)}
-                              </TableCell>
-                              <TableCell>{formatCurrency(item.categoryExpense)}</TableCell>
-                              <TableCell 
-                                sx={{
-                                  color: isUnbudgeted ? '#f44336' : isOver ? '#f44336' : remaining <= item.budgetAmount * 0.1 ? '#ff9800' : '#4caf50',
-                                  fontWeight: (isOver || isUnbudgeted) ? 'bold' : 'normal',
-                                  backgroundColor: (isOver || isUnbudgeted) ? '#ffebee' : 'inherit'
-                                }}
-                              >
-                                {isUnbudgeted ? `予算外: ${formatCurrency(item.categoryExpense)}` : formatCurrency(remaining)}
-                              </TableCell>
-                              <TableCell>
-                                {isUnbudgeted ? (
-                                  <Box sx={{ fontSize: '0.75rem', color: '#f44336', fontWeight: 'bold' }}>
-                                    予算外
-                                  </Box>
-                                ) : (
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box
-                                      sx={{
-                                        width: 60,
-                                        height: 8,
-                                        backgroundColor: '#e0e0e0',
-                                        borderRadius: 4,
-                                        overflow: 'hidden'
-                                      }}
-                                    >
-                                      <Box
-                                        sx={{
-                                          width: `${Math.min(usageRate, 100)}%`,
-                                          height: '100%',
-                                          backgroundColor: usageRate > 100 ? '#f44336' : usageRate > 80 ? '#ff9800' : '#4caf50',
-                                          transition: 'width 0.3s ease'
-                                        }}
-                                      />
-                                    </Box>
-                                    <Box 
-                                      sx={{
-                                        fontSize: '0.75rem',
-                                        color: usageRate > 100 ? '#f44336' : usageRate > 80 ? '#ff9800' : 'inherit',
-                                        fontWeight: usageRate > 100 ? 'bold' : 'normal'
-                                      }}
-                                    >
-                                      {usageRate.toFixed(1)}%
-                                    </Box>
-                                  </Box>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Box>
-              ) : null;
-            })()}
           </CardContent>
         </Card>
       </Box>
@@ -633,6 +645,51 @@ const Report: React.FC = () => {
             </>
           )}
           <Button onClick={handleCloseImageDialog} variant="contained">
+            閉じる
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 書類表示ダイアログ */}
+      <Dialog
+        open={documentDialogOpen}
+        onClose={handleCloseDocumentDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          書類表示 ({currentDocumentIndex + 1} / {selectedDocuments.length})
+          <IconButton onClick={handleCloseDocumentDialog}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {selectedDocuments.length > 0 && (
+            <Box sx={{ textAlign: 'center' }}>
+              <iframe
+                src={selectedDocuments[currentDocumentIndex]}
+                style={{
+                  width: '100%',
+                  height: '500px',
+                  border: 'none'
+                }}
+                title={`Document ${currentDocumentIndex + 1}`}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', gap: 2 }}>
+          {selectedDocuments.length > 1 && (
+            <>
+              <Button onClick={handlePrevDocument} variant="outlined">
+                前の書類
+              </Button>
+              <Button onClick={handleNextDocument} variant="outlined">
+                次の書類
+              </Button>
+            </>
+          )}
+          <Button onClick={handleCloseDocumentDialog} variant="contained">
             閉じる
           </Button>
         </DialogActions>

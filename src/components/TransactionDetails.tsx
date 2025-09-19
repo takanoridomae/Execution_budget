@@ -51,7 +51,11 @@ const TransactionDetails: React.FC = () => {
     handleDelete,
     handleImageFilesChange,
     removeNewImage,
-    removeExistingImage
+    removeExistingImage,
+    handleDocumentsChange,
+    handleDocumentFilesSelect,
+    handleDocumentRemove,
+    removeExistingDocument
   } = useTransactionEdit();
   const { getDayTransactions, incomeTransactions, expenseTransactions, dayIncomes, dayExpenses } = useTransactionData();
   
@@ -345,6 +349,10 @@ const TransactionDetails: React.FC = () => {
           onImageFilesChange={handleImageFilesChange}
           onRemoveNewImage={removeNewImage}
           onRemoveExistingImage={removeExistingImage}
+          onDocumentsChange={handleDocumentsChange}
+          onDocumentFilesSelect={handleDocumentFilesSelect}
+          onDocumentRemove={handleDocumentRemove}
+          onRemoveExistingDocument={removeExistingDocument}
         />
       ) : (
         // 表示モード

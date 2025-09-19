@@ -8,10 +8,12 @@ import {
 } from '@mui/material';
 import { Save, Cancel, Delete, PhotoCamera } from '@mui/icons-material';
 import { getImageFromLocalStorage } from '../../utils/imageUtils';
+import { getAllDocumentsForEntity } from '../../utils/documentUtils';
 import { Transaction } from '../../types';
 import { EditForm } from '../../hooks/useTransactionEdit';
 import CategorySelect from './CategorySelect';
 import NumericInput from './NumericInput';
+import DocumentAttachment, { DocumentInfo } from './DocumentAttachment';
 
 interface TransactionEditFormProps {
   transaction: Transaction;
@@ -22,6 +24,10 @@ interface TransactionEditFormProps {
   onImageFilesChange: (files: File[]) => void;
   onRemoveNewImage: (index: number) => void;
   onRemoveExistingImage: (index: number) => void;
+  onDocumentsChange: (docs: DocumentInfo[]) => void;
+  onDocumentFilesSelect: (files: File[]) => void;
+  onDocumentRemove: (document: DocumentInfo, index: number) => void;
+  onRemoveExistingDocument: (index: number) => void;
 }
 
 const TransactionEditForm: React.FC<TransactionEditFormProps> = ({
@@ -32,7 +38,11 @@ const TransactionEditForm: React.FC<TransactionEditFormProps> = ({
   onCancel,
   onImageFilesChange,
   onRemoveNewImage,
-  onRemoveExistingImage
+  onRemoveExistingImage,
+  onDocumentsChange,
+  onDocumentFilesSelect,
+  onDocumentRemove,
+  onRemoveExistingDocument
 }) => {
 
   // 画像ファイル選択処理
@@ -217,8 +227,55 @@ const TransactionEditForm: React.FC<TransactionEditFormProps> = ({
             <Typography variant="caption" color="error" sx={{ ml: 1 }}>
               画像は最大5枚まで
             </Typography>
-          )}
+            )}
         </Box>
+
+        {/* 4行目: 書類管理 */}
+        <DocumentAttachment
+          entityId={transaction.id}
+          documents={[
+            // 既存のローカル書類
+            ...editForm.existingDocumentIds.map(id => {
+              const doc = getAllDocumentsForEntity(transaction.id).find(d => d.id === id);
+              return doc ? {
+                id,
+                fileName: doc.fileName,
+                fileType: doc.fileType,
+                uploadedAt: doc.uploadedAt,
+                source: 'local' as const
+              } : null;
+            }).filter(Boolean) as DocumentInfo[],
+            // 既存のFirebase書類
+            ...editForm.existingDocumentUrls.map(url => ({
+              url,
+              fileName: url.split('/').pop()?.split('_').slice(1).join('_') || 'document',
+              fileType: 'application/octet-stream',
+              uploadedAt: new Date().toISOString(),
+              source: 'firebase' as const
+            })),
+            // 新しく選択された書類
+            ...editForm.documents
+          ]}
+          onDocumentsChange={onDocumentsChange}
+          onFilesSelect={onDocumentFilesSelect}
+          onDocumentRemove={(document, index) => {
+            // 既存書類の削除かチェック
+            const existingLocalCount = editForm.existingDocumentIds.length;
+            const existingFirebaseCount = editForm.existingDocumentUrls.length;
+            const totalExisting = existingLocalCount + existingFirebaseCount;
+            
+            if (index < totalExisting) {
+              // 既存書類の削除
+              onRemoveExistingDocument(index);
+            } else {
+              // 新規書類の削除
+              onDocumentRemove(document, index);
+            }
+          }}
+          maxFiles={5}
+          label="書類を添付"
+          helperText="レシート、請求書、契約書などの書類をアップロードできます（最大10MB）"
+        />
       </Box>
     </Box>
   );

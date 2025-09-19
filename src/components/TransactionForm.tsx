@@ -21,9 +21,11 @@ import { validateAmount, validateCategory, validateDescription } from '../utils/
 import { useAlert } from '../hooks/useAlert';
 import CategorySelect from './common/CategorySelect';
 import NumericInput from './common/NumericInput';
+import DocumentAttachment, { DocumentInfo } from './common/DocumentAttachment';
 
 // Firebase Storage関連は削除
 import { saveImagesHybridBatch } from '../utils/imageUtils';
+import { saveDocumentsHybridBatch } from '../utils/documentUtils';
 import { useStorageMonitor } from '../hooks/useStorageMonitor';
 
 const TransactionForm: React.FC = () => {
@@ -43,6 +45,10 @@ const TransactionForm: React.FC = () => {
   // 追加: 画像アップロード関連
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  
+  // 追加: 書類添付関連
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
 
   // トランザクションタイプが変更されたらカテゴリーをリセット
   useEffect(() => {
@@ -57,6 +63,8 @@ const TransactionForm: React.FC = () => {
     setDescription('');
     setImageFiles([]);
     setImagePreviews([]);
+    setDocumentFiles([]);
+    setDocuments([]);
     setFieldErrors({});
   };
 
@@ -135,6 +143,55 @@ const TransactionForm: React.FC = () => {
     }
   };
 
+  // ハイブリッド書類保存処理
+  const saveDocumentsToStorage = async (transactionId: string): Promise<{
+    documentIds: string[];
+    documentUrls: string[];
+    saveReport: string;
+  }> => {
+    if (!documentFiles || documentFiles.length === 0) {
+      return { documentIds: [], documentUrls: [], saveReport: '保存対象の書類がありません' };
+    }
+
+    console.log('🚀 ハイブリッド書類保存開始', {
+      ファイル数: documentFiles.length,
+      総サイズ: `${Math.round(documentFiles.reduce((sum, f) => sum + f.size, 0) / 1024)} KB`
+    });
+
+    try {
+      const results = await saveDocumentsHybridBatch(transactionId, documentFiles);
+      
+      const documentIds = results.filter(r => r.documentId).map(r => r.documentId!);
+      const documentUrls = results.filter(r => r.documentUrl).map(r => r.documentUrl!);
+      
+      const localCount = results.filter(r => r.saveMethod === 'local').length;
+      const firebaseCount = results.filter(r => r.saveMethod === 'firebase').length;
+      
+      let saveReport = `${results.length}件保存完了`;
+      if (localCount > 0 && firebaseCount > 0) {
+        saveReport += ` (クラウド: ${firebaseCount}件、ローカル: ${localCount}件)`;
+      } else if (firebaseCount > 0) {
+        saveReport += ` (クラウド保存・デバイス間同期対応)`;
+      } else if (localCount > 0) {
+        saveReport += ` (ローカル保存・Firebase準備中)`;
+      }
+      
+      console.log('✅ ハイブリッド書類保存完了', {
+        成功数: results.length,
+        ローカル: localCount,
+        Firebase: firebaseCount,
+        documentIds,
+        documentUrls
+      });
+
+      return { documentIds, documentUrls, saveReport };
+      
+    } catch (error) {
+      console.error('❌ 書類保存エラー:', error);
+      throw new Error(`書類の保存に失敗しました: ${error}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -161,31 +218,56 @@ const TransactionForm: React.FC = () => {
       
       const transactionId = await addTransaction(newTransaction);
       
-      // 画像がある場合はハイブリッド保存（ローカル→Firebase フォールバック）
-      if (imageFiles && imageFiles.length > 0) {
+      // 画像・書類がある場合はハイブリッド保存（ローカル→Firebase フォールバック）
+      const hasFiles = (imageFiles && imageFiles.length > 0) || (documentFiles && documentFiles.length > 0);
+      
+      if (hasFiles) {
         try {
-          const { imageIds, imageUrls, saveReport } = await saveImagesToStorage(transactionId);
-          
-          // 取引に画像情報を追加で更新
           const updateData: any = {};
-          if (imageIds.length > 0) {
-            updateData.imageIds = imageIds;
+          let combinedSaveReport = '';
+          
+          // 画像保存
+          if (imageFiles && imageFiles.length > 0) {
+            const { imageIds, imageUrls, saveReport: imageSaveReport } = await saveImagesToStorage(transactionId);
+            
+            if (imageIds.length > 0) {
+              updateData.imageIds = imageIds;
+            }
+            if (imageUrls.length > 0) {
+              updateData.imageUrls = imageUrls;
+            }
+            
+            combinedSaveReport += imageSaveReport;
           }
-          if (imageUrls.length > 0) {
-            updateData.imageUrls = imageUrls;
+          
+          // 書類保存
+          if (documentFiles && documentFiles.length > 0) {
+            const { documentIds, documentUrls, saveReport: documentSaveReport } = await saveDocumentsToStorage(transactionId);
+            
+            if (documentIds.length > 0) {
+              updateData.documentIds = documentIds;
+            }
+            if (documentUrls.length > 0) {
+              updateData.documentUrls = documentUrls;
+            }
+            
+            if (combinedSaveReport) {
+              combinedSaveReport += ' / ';
+            }
+            combinedSaveReport += documentSaveReport;
           }
           
           if (Object.keys(updateData).length > 0) {
             await updateTransaction(transactionId, updateData);
           }
           
-          showSuccess(`取引が正常に保存されました！${saveReport}`);
+          showSuccess(`取引が正常に保存されました！${combinedSaveReport}`);
           
-          // 画像アップロード後にストレージ使用量をチェック
+          // ファイルアップロード後にストレージ使用量をチェック
           checkAfterImageUpload();
-        } catch (imageError) {
-          console.error('画像保存エラー:', imageError);
-          showError('取引は保存されましたが、画像の保存に失敗しました。');
+        } catch (fileError) {
+          console.error('ファイル保存エラー:', fileError);
+          showError('取引は保存されましたが、ファイルの保存に失敗しました。');
         }
       } else {
         showSuccess('取引が正常に保存されました！');
@@ -211,6 +293,26 @@ const TransactionForm: React.FC = () => {
     // プレビュー生成
     const previews = nextFiles.map((f) => URL.createObjectURL(f));
     setImagePreviews(previews);
+  };
+
+  // 書類添付ハンドラー
+  const handleDocumentsChange = (docs: DocumentInfo[]) => {
+    setDocuments(docs);
+  };
+
+  const handleDocumentFilesSelect = (files: File[]) => {
+    setDocumentFiles(files);
+  };
+
+  const handleDocumentRemove = (document: DocumentInfo, index: number) => {
+    // 新しく選択されたファイルの削除
+    if (document.file) {
+      setDocumentFiles(prev => prev.filter(f => f !== document.file));
+    }
+    
+    // documents配列から削除
+    const newDocuments = documents.filter((_, i) => i !== index);
+    setDocuments(newDocuments);
   };
 
 
@@ -377,6 +479,18 @@ const TransactionForm: React.FC = () => {
             </Box>
           )}
         </Box>
+
+        {/* 書類添付UI */}
+        <DocumentAttachment
+          entityId="transaction-form"
+          documents={documents}
+          onDocumentsChange={handleDocumentsChange}
+          onFilesSelect={handleDocumentFilesSelect}
+          onDocumentRemove={handleDocumentRemove}
+          maxFiles={5}
+          label="書類を添付（任意）"
+          helperText="レシート、請求書、契約書などの書類をアップロードできます（最大10MB）"
+        />
 
         {/* ボタン */}
         <Box display="flex" gap={2} sx={{ mt: 'auto' }}>
