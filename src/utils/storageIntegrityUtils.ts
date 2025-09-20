@@ -1,6 +1,6 @@
 // Firebase StorageとDBの整合性チェックユーティリティ
 
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Transaction, Site, SiteCategory, SiteIncome, SiteExpense } from '../types';
@@ -49,7 +49,7 @@ const parseStoragePath = (fullPath: string): { entityType: string; entityId: str
     }
     
     if (folderType === 'documents') {
-      // カテゴリや収入・支出のドキュメント
+      // カテゴリや入金・支出のドキュメント
       if (entityId.startsWith('category_')) {
         return { entityType: 'siteCategory', entityId, fileType: 'documents' };
       } else if (entityId.startsWith('income_')) {
@@ -172,11 +172,24 @@ export const getAllStorageFieldDocuments = async (): Promise<{
     });
 
     // SiteExpensesコレクション
+    console.log('🔍 SiteExpensesコレクション取得開始...');
     const siteExpensesSnapshot = await getDocs(collection(db, 'SiteExpenses'));
+    console.log(`📊 SiteExpenses総数: ${siteExpensesSnapshot.size}`);
+    
     siteExpensesSnapshot.forEach((doc) => {
       const data = doc.data() as SiteExpense;
+      console.log(`🔍 SiteExpenseドキュメント: ${doc.id}`, {
+        hasImageUrls: !!data.imageUrls?.length,
+        hasDocumentUrls: !!data.documentUrls?.length,
+        imageUrlsLength: data.imageUrls?.length || 0,
+        documentUrlsLength: data.documentUrls?.length || 0,
+        sampleImageUrls: data.imageUrls?.slice(0, 1) || [],
+        sampleDocumentUrls: data.documentUrls?.slice(0, 1) || []
+      });
+      
       if (data.imageUrls?.length || data.documentUrls?.length) {
         results.siteExpenses.push({ ...data, id: doc.id });
+        console.log(`✅ SiteExpense追加: ${doc.id} (images: ${data.imageUrls?.length || 0}, docs: ${data.documentUrls?.length || 0})`);
       }
     });
 
@@ -186,6 +199,28 @@ export const getAllStorageFieldDocuments = async (): Promise<{
       siteCategories: results.siteCategories.length,
       siteIncomes: results.siteIncomes.length,
       siteExpenses: results.siteExpenses.length
+    });
+
+    // デバッグ: 実際に取得されたURLの一部を表示
+    const allUrls: string[] = [];
+    Object.values(results).forEach(docs => {
+      docs.forEach(doc => {
+        ['imageUrls', 'documentUrls'].forEach(field => {
+          const urls = (doc as any)[field] as string[] | undefined;
+          if (urls) {
+            allUrls.push(...urls);
+          }
+        });
+      });
+    });
+    
+    console.log('🔍 取得されたDB URLの詳細:', {
+      totalUrls: allUrls.length,
+      sampleUrls: allUrls.slice(0, 5).map(url => ({
+        url: url.substring(0, 100) + '...',
+        path: extractStoragePathFromUrl(url)
+      })),
+      uniqueUrls: new Set(allUrls).size
     });
 
     return results;
@@ -212,17 +247,43 @@ export const getAllStorageFiles = async (): Promise<Array<{
   }> = [];
 
   try {
-    // 主要なフォルダをチェック
-    const foldersToCheck = ['transactions', 'sites', 'documents'];
+    // 主要なフォルダをチェック（categoriesフォルダも追加）
+    const foldersToCheck = ['transactions', 'sites', 'documents', 'categories'];
     
     for (const folder of foldersToCheck) {
       try {
+        console.log(`📂 フォルダ開始: ${folder}`);
         const folderRef = ref(storage, folder);
         await listFilesRecursively(folderRef, allFiles, folder);
+        console.log(`📂 フォルダ完了: ${folder}, 累計ファイル数: ${allFiles.length}`);
       } catch (error) {
         console.warn(`⚠️ フォルダ ${folder} の取得に失敗:`, error);
         // 続行
       }
+    }
+    
+    // ルートレベルのファイルもチェック
+    try {
+      console.log('📂 ルートレベルファイルチェック開始');
+      const rootRef = ref(storage, '');
+      const rootResult = await listAll(rootRef);
+      
+      for (const fileRef of rootResult.items) {
+        try {
+          const url = await getDownloadURL(fileRef);
+          allFiles.push({
+            path: fileRef.fullPath,
+            url,
+            name: fileRef.name,
+            folder: 'root'
+          });
+          console.log(`✅ ルートファイル取得: ${fileRef.fullPath}`);
+        } catch (error) {
+          console.warn(`⚠️ ルートファイル ${fileRef.fullPath} のURL取得失敗:`, error);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ ルートレベルファイルの取得に失敗:', error);
     }
 
     console.log('✅ Storage ファイル取得完了:', {
@@ -249,6 +310,8 @@ const listFilesRecursively = async (
   try {
     const result = await listAll(folderRef);
     
+    console.log(`📁 フォルダ処理中: ${folderRef.fullPath}, ファイル数: ${result.items.length}, サブフォルダ数: ${result.prefixes.length}`);
+    
     // ファイルを処理
     for (const fileRef of result.items) {
       try {
@@ -259,6 +322,7 @@ const listFilesRecursively = async (
           name: fileRef.name,
           folder: baseFolderName
         });
+        console.log(`✅ ファイル取得成功: ${fileRef.fullPath}`);
       } catch (error) {
         console.warn(`⚠️ ファイル ${fileRef.fullPath} のURL取得失敗:`, error);
       }
@@ -472,13 +536,119 @@ const checkStorageFilesInDb = async (
     });
   });
 
+  console.log('🔍 DB URL照合の詳細デバッグ:', {
+    totalDbUrls: allDbUrls.size,
+    totalDbUrlsNormalized: allDbUrlsNormalized.size,
+    totalStorageFiles: storageFiles.length,
+    sampleDbUrls: Array.from(allDbUrls).slice(0, 3),
+    sampleStorageFiles: storageFiles.slice(0, 3).map(f => ({ path: f.path, url: f.url.substring(0, 100) + '...' }))
+  });
+
+  // 孤立ファイルの実際の所有者を特定
+  const orphanEntityId = '9T18QAJmo35EDJqAi0Hk'; // 実際に問題のあるエンティティID
+  const foundOrphanEntity = Object.values(dbDocuments).flat().find((doc: any) => doc.id === orphanEntityId);
+  
+  if (foundOrphanEntity) {
+    console.log('✅ 孤立ファイルの所有者がDB取得結果に含まれている:', {
+      id: foundOrphanEntity.id,
+      imageUrls: (foundOrphanEntity as any).imageUrls,
+      documentUrls: (foundOrphanEntity as any).documentUrls
+    });
+  } else {
+    console.log('❌ 孤立ファイルの所有者がDB取得結果に見つからない:', orphanEntityId);
+    console.log('📝 これらのファイルは真の孤立ファイルです:');
+    console.log('  - transactions/9T18QAJmo35EDJqAi0Hk/images/1758278966723_IMG_2173__2_.jpeg');
+    console.log('  - documents/9T18QAJmo35EDJqAi0Hk/1758278967243___.pdf');
+    
+    // 全コレクションで該当IDを検索
+    console.log('🔍 全コレクションで孤立エンティティID検索中...');
+    const collectionsToCheck = ['Transactions', 'SiteExpenses', 'SiteIncomes', 'Sites', 'SiteCategories'];
+    
+    for (const collectionName of collectionsToCheck) {
+      try {
+        const orphanDocRef = doc(db, collectionName, orphanEntityId);
+        const orphanDocSnap = await getDoc(orphanDocRef);
+        
+        if (orphanDocSnap.exists()) {
+          const orphanData = orphanDocSnap.data();
+          console.log(`✅ 孤立エンティティが${collectionName}で発見:`, {
+            id: orphanEntityId,
+            collection: collectionName,
+            data: orphanData,
+            hasImageUrls: !!orphanData.imageUrls?.length,
+            hasDocumentUrls: !!orphanData.documentUrls?.length,
+            imageUrls: orphanData.imageUrls,
+            documentUrls: orphanData.documentUrls
+          });
+          break;
+        } else {
+          console.log(`❌ ${collectionName}に${orphanEntityId}は存在しない`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ ${collectionName}での検索エラー:`, error);
+      }
+    }
+    
+    // さらに詳細: URLを含むドキュメントを全検索
+    console.log('🔍 孤立ファイルURLを参照している全ドキュメントを検索中...');
+    const targetImageUrl = 'transactions/9T18QAJmo35EDJqAi0Hk/images/1758278966723_IMG_2173__2_.jpeg';
+    const targetDocUrl = 'documents/9T18QAJmo35EDJqAi0Hk/1758278967243___.pdf';
+    
+    for (const collectionName of collectionsToCheck) {
+      try {
+        const collectionSnapshot = await getDocs(collection(db, collectionName));
+        collectionSnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const hasTargetImageUrl = data.imageUrls?.some((url: string) => url.includes('1758278966723_IMG_2173__2_.jpeg'));
+          const hasTargetDocUrl = data.documentUrls?.some((url: string) => url.includes('1758278967243___.pdf'));
+          
+          if (hasTargetImageUrl || hasTargetDocUrl) {
+            console.log(`🎯 孤立ファイルURLを参照するドキュメント発見:`, {
+              collection: collectionName,
+              docId: docSnap.id,
+              hasTargetImageUrl,
+              hasTargetDocUrl,
+              imageUrls: data.imageUrls,
+              documentUrls: data.documentUrls,
+              fullData: data
+            });
+          }
+        });
+      } catch (error) {
+        console.warn(`⚠️ ${collectionName}でのURL検索エラー:`, error);
+      }
+    }
+  }
+  
+  // 特定のファイルがリストに含まれているかを詳細チェック
+  const problematicFile = 'transactions/9T18QAJmo35EDJqAi0Hk/images/1758278966723_IMG_2173__2_.jpeg';
+  const matchingStorageFile = storageFiles.find(f => f.path.includes(problematicFile) || f.path.includes('1758278966723'));
+  
+  if (matchingStorageFile) {
+    console.log('🔍 問題ファイルがStorageリストに存在:', {
+      foundFile: matchingStorageFile,
+      path: matchingStorageFile.path,
+      url: matchingStorageFile.url
+    });
+  } else {
+    console.log('❌ 問題ファイルがStorageリストに見つからない:', problematicFile);
+    console.log('📝 取得されたStorageファイルのパス一覧:', 
+      storageFiles
+        .filter(f => f.path.includes('transactions'))
+        .map(f => f.path)
+        .slice(0, 10)
+    );
+  }
+
   // StorageファイルがDBに参照されているかチェック
   for (const file of storageFiles) {
     let isReferenced = false;
+    let matchMethod = '';
     
     // 1. 元のURLで確認
     if (allDbUrls.has(file.url)) {
       isReferenced = true;
+      matchMethod = 'exact URL match';
     }
     
     // 2. 正規化URLで確認
@@ -486,11 +656,40 @@ const checkStorageFilesInDb = async (
       const normalizedFileUrl = normalizeFirebaseUrl(file.url);
       if (allDbUrlsNormalized.has(normalizedFileUrl)) {
         isReferenced = true;
+        matchMethod = 'normalized URL match';
+      }
+    }
+    
+    // 3. URL部分一致での確認（トークンが変わる場合があるため）
+    if (!isReferenced) {
+      const filePath = extractStoragePathFromUrl(file.url);
+      if (filePath) {
+        const dbUrlArray = Array.from(allDbUrls);
+        for (const dbUrl of dbUrlArray) {
+          const dbPath = extractStoragePathFromUrl(dbUrl);
+          if (dbPath && dbPath === filePath) {
+            isReferenced = true;
+            matchMethod = 'path match';
+            console.log('✅ パス一致で参照発見:', {
+              storageFile: file.path,
+              storageUrl: file.url.substring(0, 100) + '...',
+              dbUrl: dbUrl.substring(0, 100) + '...',
+              extractedPath: filePath
+            });
+            break;
+          }
+        }
       }
     }
     
     // 参照されていない場合のみ孤立ファイルとして記録
     if (!isReferenced) {
+      console.log('❌ 孤立ファイル検出:', {
+        path: file.path,
+        url: file.url.substring(0, 100) + '...',
+        extractedPath: extractStoragePathFromUrl(file.url)
+      });
+      
       const parsedPath = parseStoragePath(file.path);
       
       issues.push({
@@ -502,6 +701,12 @@ const checkStorageFilesInDb = async (
         storageFiles: [file.path],
         description: `Storageファイル "${file.path}" がどのDBレコードからも参照されていません（孤立ファイル）`,
         entityData: { storageFile: file }
+      });
+    } else {
+      console.log('✅ ファイル参照確認:', {
+        path: file.path,
+        matchMethod,
+        url: file.url.substring(0, 50) + '...'
       });
     }
   }
@@ -580,6 +785,100 @@ export const saveIntegrityCheckResult = (result: IntegrityCheckResult): void => 
     console.log('💾 整合性チェック結果をローカル保存完了');
   } catch (error) {
     console.error('❌ 整合性チェック結果の保存失敗:', error);
+  }
+};
+
+// デバッグ用：特定のStorageファイルがDBで参照されているかをチェック
+export const debugCheckFileReference = async (storageFilePath: string): Promise<{
+  isReferenced: boolean;
+  matchDetails: any;
+  dbUrls: string[];
+  storageUrl?: string;
+}> => {
+  console.log('🔍 デバッグ: ファイル参照チェック開始:', storageFilePath);
+  
+  try {
+    // DBからすべてのURLを取得
+    const dbDocuments = await getAllStorageFieldDocuments();
+    const allDbUrls: string[] = [];
+    
+    Object.values(dbDocuments).forEach(docs => {
+      docs.forEach(doc => {
+        ['imageUrls', 'documentUrls'].forEach(field => {
+          const urls = (doc as any)[field] as string[] | undefined;
+          if (urls) {
+            allDbUrls.push(...urls);
+          }
+        });
+      });
+    });
+    
+    // Storageからファイル情報を取得
+    const storageFiles = await getAllStorageFiles();
+    const targetFile = storageFiles.find(f => f.path === storageFilePath);
+    
+    if (!targetFile) {
+      return {
+        isReferenced: false,
+        matchDetails: { error: 'ファイルがStorageに見つかりません' },
+        dbUrls: [],
+      };
+    }
+    
+    let isReferenced = false;
+    const matchDetails: any = {};
+    
+    // 1. 完全一致チェック
+    if (allDbUrls.includes(targetFile.url)) {
+      isReferenced = true;
+      matchDetails.exactMatch = true;
+    }
+    
+    // 2. 正規化URLでチェック
+    const normalizedFileUrl = normalizeFirebaseUrl(targetFile.url);
+    const normalizedDbUrls = allDbUrls.map(url => normalizeFirebaseUrl(url));
+    if (normalizedDbUrls.includes(normalizedFileUrl)) {
+      isReferenced = true;
+      matchDetails.normalizedMatch = true;
+    }
+    
+    // 3. パス比較
+    const filePath = extractStoragePathFromUrl(targetFile.url);
+    if (filePath) {
+      for (const dbUrl of allDbUrls) {
+        const dbPath = extractStoragePathFromUrl(dbUrl);
+        if (dbPath === filePath) {
+          isReferenced = true;
+          matchDetails.pathMatch = true;
+          matchDetails.matchingDbUrl = dbUrl;
+          break;
+        }
+      }
+    }
+    
+    console.log('🔍 デバッグ結果:', {
+      storageFilePath,
+      storageUrl: targetFile.url,
+      isReferenced,
+      matchDetails,
+      extractedPath: filePath,
+      totalDbUrls: allDbUrls.length
+    });
+    
+    return {
+      isReferenced,
+      matchDetails,
+      dbUrls: allDbUrls,
+      storageUrl: targetFile.url
+    };
+    
+  } catch (error) {
+    console.error('❌ デバッグチェックエラー:', error);
+    return {
+      isReferenced: false,
+      matchDetails: { error: error instanceof Error ? error.message : String(error) },
+      dbUrls: []
+    };
   }
 };
 

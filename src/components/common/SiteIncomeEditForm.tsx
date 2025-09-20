@@ -47,7 +47,7 @@ const SiteIncomeEditFormComponent: React.FC<SiteIncomeEditFormProps> = ({
             size="small" 
             color="primary" 
             onClick={() => {
-              console.log('💾 現場収入保存ボタンクリック');
+              console.log('💾 現場入金保存ボタンクリック');
               onSave();
             }}
           >

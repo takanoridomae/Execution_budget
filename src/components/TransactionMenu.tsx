@@ -49,7 +49,7 @@ const TransactionMenu: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const { dayData } = useTransactionData();
   
-  // 現場別データから該当日の収入・支出を取得
+  // 現場別データから該当日の入金・支出を取得
   const getSiteTransactionsByType = (type: 'income' | 'expense') => {
     if (!selectedDate) return [];
     
@@ -103,7 +103,7 @@ const TransactionMenu: React.FC = () => {
       </Typography>
       
       <Grid container spacing={2}>
-        {/* 収入 */}
+        {/* 入金 */}
         <Grid size={4}>
           <Card 
             sx={{ 
@@ -127,7 +127,7 @@ const TransactionMenu: React.FC = () => {
                 <TrendingUp sx={{ color: '#4caf50', fontSize: isMobile ? 24 : 32 }} />
               </Box>
               <Typography variant="body2" color="textSecondary" gutterBottom>
-                収入
+                入金
               </Typography>
               <Typography 
                 variant={isMobile ? "body1" : "h6"} 
@@ -272,7 +272,7 @@ const TransactionMenu: React.FC = () => {
         <DialogTitle>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">
-              {formatDisplayDate(selectedDate)}の{modalType === 'income' ? '収入' : '支出'}詳細
+              {formatDisplayDate(selectedDate)}の{modalType === 'income' ? '入金' : '支出'}詳細
             </Typography>
             <IconButton onClick={closeModal}>
               <Close />
@@ -290,7 +290,7 @@ const TransactionMenu: React.FC = () => {
               // カテゴリー名を取得
               let categoryName = '';
               if (modalType === 'income') {
-                categoryName = (transaction as SiteIncome).category; // '売上'
+                categoryName = (transaction as SiteIncome).category; // '入金'
               } else {
                 const category = categories.find(c => c.id === (transaction as SiteExpense).categoryId);
                 categoryName = category?.name || '不明なカテゴリー';
@@ -369,7 +369,7 @@ const TransactionMenu: React.FC = () => {
             
             {getSiteTransactionsByType(modalType).length === 0 && (
               <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                {modalType === 'income' ? '収入' : '支出'}の記録がありません
+                {modalType === 'income' ? '入金' : '支出'}の記録がありません
               </Typography>
             )}
           </List>

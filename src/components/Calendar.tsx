@@ -301,7 +301,7 @@ const Calendar: React.FC = () => {
         <Grid container spacing={2}>
           <Grid size={4}>
             <Box textAlign="center">
-              <Typography variant="body2" color="textSecondary">収入</Typography>
+              <Typography variant="body2" color="textSecondary">入金</Typography>
               <Typography 
                 variant="h6" 
                 color="success.main"

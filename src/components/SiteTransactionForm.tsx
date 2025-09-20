@@ -335,7 +335,7 @@ const SiteTransactionForm: React.FC = () => {
       let newImageUrls: string[] = [];
 
       if (transactionType === 'income') {
-        // 収入の場合：SiteIncomesコレクションに保存、カテゴリーは「売上」固定
+        // 入金の場合：SiteIncomesコレクションに保存、カテゴリーは「入金」固定
         const incomeData = {
           amount: parseFloat(amount),
           content: description,
@@ -349,7 +349,7 @@ const SiteTransactionForm: React.FC = () => {
         const hasFiles = (imageFiles && imageFiles.length > 0) || (documentFiles && documentFiles.length > 0);
         
         if (hasFiles) {
-          console.log('🗂️ 収入にファイルを保存します:', {
+          console.log('🗂️ 入金にファイルを保存します:', {
             imageCount: imageFiles?.length || 0,
             documentCount: documentFiles?.length || 0
           });
@@ -383,21 +383,21 @@ const SiteTransactionForm: React.FC = () => {
               combinedSaveReport += documentResult.saveReport;
             }
 
-            // ファイルデータが保存された場合、収入情報を更新
+            // ファイルデータが保存された場合、入金情報を更新
             if (Object.keys(updateData).length > 0) {
               await updateSiteIncome(transactionId, updateData);
             }
 
-            showSuccess(`収入を追加しました（カテゴリー: 売上）${combinedSaveReport}`);
+            showSuccess(`入金を追加しました（カテゴリー: 入金）${combinedSaveReport}`);
             
             // ファイルアップロード後にストレージ使用量をチェック
             checkAfterImageUpload();
           } catch (fileError) {
             console.error('ファイル保存エラー:', fileError);
-            showError('収入は追加されましたが、ファイルの保存に失敗しました。');
+            showError('入金は追加されましたが、ファイルの保存に失敗しました。');
           }
         } else {
-          showSuccess('収入を追加しました（カテゴリー: 売上）');
+          showSuccess('入金を追加しました（カテゴリー: 入金）');
         }
       } else {
         // 支出の場合：SiteExpensesコレクションに保存
@@ -570,7 +570,7 @@ const SiteTransactionForm: React.FC = () => {
             value={transactionType}
             onChange={(e) => setTransactionType(e.target.value as TransactionType)}
           >
-            <FormControlLabel value="income" control={<Radio />} label="収入" />
+            <FormControlLabel value="income" control={<Radio />} label="入金" />
             <FormControlLabel value="expense" control={<Radio />} label="支出" />
           </RadioGroup>
         </FormControl>
@@ -598,11 +598,11 @@ const SiteTransactionForm: React.FC = () => {
 
         {/* カテゴリー選択 */}
         {transactionType === 'income' ? (
-          // 収入時は「売上」固定表示
+          // 入金時は「入金」固定表示
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel shrink>カテゴリー</InputLabel>
             <TextField
-              value="売上"
+              value="入金"
               label="カテゴリー"
               disabled
               fullWidth
@@ -613,7 +613,7 @@ const SiteTransactionForm: React.FC = () => {
                   color: 'text.primary'
                 } 
               }}
-              helperText="収入のカテゴリーは自動的に「売上」になります"
+              helperText="入金のカテゴリーは自動的に「入金」になります"
             />
           </FormControl>
         ) : (

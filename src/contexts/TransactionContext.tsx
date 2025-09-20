@@ -34,7 +34,7 @@ interface TransactionContextType {
   getSiteTransactionsBySiteAndCategory: (siteId: string, categoryId: string) => SiteTransaction[];
   siteTransactionLoading: boolean;
   
-  // 新しい収入・支出分離機能
+  // 新しい入金・支出分離機能
   siteIncomes: SiteIncome[];
   siteExpenses: SiteExpense[];
   addSiteIncome: (income: Omit<SiteIncome, 'id' | 'type' | 'category'>) => Promise<string>;
@@ -77,7 +77,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
   const [siteTransactions, setSiteTransactions] = useState<SiteTransaction[]>([]);
   const [siteTransactionLoading, setSiteTransactionLoading] = useState(true);
   
-  // 収入・支出分離状態
+  // 入金・支出分離状態
   const [siteIncomes, setSiteIncomes] = useState<SiteIncome[]>([]);
   const [siteExpenses, setSiteExpenses] = useState<SiteExpense[]>([]);
   const [incomeExpenseLoading, setIncomeExpenseLoading] = useState(true);
@@ -198,12 +198,12 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     }
   };
 
-  // 現場別収入・支出を取得
+  // 現場別入金・支出を取得
   const fetchSiteIncomesAndExpenses = async () => {
     try {
-      console.log('💰 現場別収入・支出を取得中...');
+      console.log('💰 現場別入金・支出を取得中...');
       
-      // 収入を取得
+      // 入金を取得
       const incomesSnapshot = await getDocs(collection(db, 'SiteIncomes'));
       const incomesData = incomesSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -217,13 +217,13 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
         ...doc.data(),
       })) as SiteExpense[];
       
-      console.log('💰 取得した収入:', incomesData.length);
+      console.log('💰 取得した入金:', incomesData.length);
       console.log('💸 取得した支出:', expensesData.length);
       
       setSiteIncomes(incomesData);
       setSiteExpenses(expensesData);
     } catch (error) {
-      console.error('❌ 収入・支出取得エラー:', error);
+      console.error('❌ 入金・支出取得エラー:', error);
     } finally {
       setIncomeExpenseLoading(false);
     }
@@ -395,14 +395,14 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     );
   };
 
-  // 収入関連の関数
+  // 入金関連の関数
   const addSiteIncome = async (incomeData: Omit<SiteIncome, 'id' | 'type' | 'category'>): Promise<string> => {
     try {
-      console.log('💰 現場別収入追加:', incomeData);
+      console.log('💰 現場別入金追加:', incomeData);
       const newIncome = {
         ...incomeData,
         type: 'income' as const,
-        category: '売上' as const,
+        category: '入金' as const,
       };
       
       const docRef = await addDoc(collection(db, 'SiteIncomes'), newIncome);
@@ -412,10 +412,10 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
       };
       
       setSiteIncomes(prev => [...prev, incomeWithId]);
-      console.log('✅ 現場別収入追加成功:', incomeWithId);
+      console.log('✅ 現場別入金追加成功:', incomeWithId);
       return docRef.id;
     } catch (error) {
-      console.error('❌ 現場別収入追加エラー:', error);
+      console.error('❌ 現場別入金追加エラー:', error);
       throw error;
     }
   };
@@ -456,7 +456,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
       await updateDoc(doc(db, 'SiteIncomes', id), cleanUpdates);
       setSiteIncomes(prev => prev.map(income => income.id === id ? { ...income, ...updates } : income));
     } catch (error) {
-      console.error('❌ 現場別収入更新エラー:', error);
+      console.error('❌ 現場別入金更新エラー:', error);
       throw error;
     }
   };
@@ -484,7 +484,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
       await deleteDoc(doc(db, 'SiteIncomes', id));
       setSiteIncomes(prev => prev.filter(income => income.id !== id));
     } catch (error) {
-      console.error('❌ 現場別収入削除エラー:', error);
+      console.error('❌ 現場別入金削除エラー:', error);
       throw error;
     }
   };
@@ -513,7 +513,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     console.log('🔧 Firebase db object:', db);
     fetchTransactions();
     fetchSiteTransactions(); // 現場ベーストランザクションも取得
-    fetchSiteIncomesAndExpenses(); // 収入・支出も取得
+    fetchSiteIncomesAndExpenses(); // 入金・支出も取得
   }, []);
 
   // トランザクション状態の変更を監視
@@ -552,7 +552,7 @@ export const TransactionProvider: React.FC<TransactionProviderProps> = ({ childr
     getSiteTransactionsBySiteAndCategory,
     siteTransactionLoading,
     
-    // 収入・支出分離機能
+    // 入金・支出分離機能
     siteIncomes,
     siteExpenses,
     addSiteIncome,

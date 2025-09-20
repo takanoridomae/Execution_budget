@@ -36,7 +36,8 @@ import {
   ExpandMore as ExpandMoreIcon,
   Storage as StorageIcon,
   DataObject as DatabaseIcon,
-  BrokenImage as BrokenImageIcon
+  BrokenImage as BrokenImageIcon,
+  Assessment as AssessmentIcon
 } from '@mui/icons-material';
 import {
   checkStorageIntegrity,
@@ -47,6 +48,7 @@ import {
   fixAllBrokenLinks,
   fixAllOrphanFiles,
   saveIntegrityCheckHistory,
+  debugCheckFileReference,
   IntegrityCheckResult,
   IntegrityIssue
 } from '../utils/storageIntegrityUtils';
@@ -85,6 +87,32 @@ const StorageIntegrityChecker: React.FC<StorageIntegrityCheckerProps> = ({ open,
       alert('整合性チェック中にエラーが発生しました。コンソールをご確認ください。');
     } finally {
       setIsChecking(false);
+    }
+  };
+
+  // 問題のデバッグ
+  const handleDebugIssue = async (issue: IntegrityIssue) => {
+    if (issue.issueType === 'missing_in_db' && issue.storageFiles?.[0]) {
+      try {
+        const debugResult = await debugCheckFileReference(issue.storageFiles[0]);
+        
+        console.log('🔍 問題詳細デバッグ結果:', debugResult);
+        
+        const details = [
+          `ファイルパス: ${issue.storageFiles[0]}`,
+          `参照状況: ${debugResult.isReferenced ? '参照されている' : '参照されていない'}`,
+          `StorageURL: ${debugResult.storageUrl?.substring(0, 100)}...`,
+          `DB内URL総数: ${debugResult.dbUrls.length}`,
+          `照合詳細: ${JSON.stringify(debugResult.matchDetails, null, 2)}`
+        ].join('\n\n');
+        
+        alert(`デバッグ情報（詳細はコンソールを確認）:\n\n${details}`);
+      } catch (error) {
+        console.error('デバッグエラー:', error);
+        alert('デバッグ中にエラーが発生しました。');
+      }
+    } else {
+      alert('この問題タイプではデバッグ機能は利用できません。');
     }
   };
 
@@ -270,7 +298,7 @@ const StorageIntegrityChecker: React.FC<StorageIntegrityCheckerProps> = ({ open,
       case 'transaction': return 'トランザクション';
       case 'site': return '現場';
       case 'siteCategory': return '現場カテゴリ';
-      case 'siteIncome': return '現場収入';
+      case 'siteIncome': return '現場入金';
       case 'siteExpense': return '現場支出';
       default: return entityType;
     }
@@ -476,20 +504,33 @@ const StorageIntegrityChecker: React.FC<StorageIntegrityCheckerProps> = ({ open,
                                   }
                                 />
                                 <ListItemSecondaryAction>
-                                  <Tooltip title={
-                                    issue.issueType === 'missing_in_db' 
-                                      ? '孤立ファイルを削除' 
-                                      : 'DB参照を削除'
-                                  }>
-                                    <IconButton
-                                      edge="end"
-                                      color="primary"
-                                      onClick={() => handleFixIssue(issue)}
-                                      disabled={fixingIssues.has(issue.id)}
-                                    >
-                                      {issue.issueType === 'missing_in_db' ? <DeleteIcon /> : <RemoveCircleIcon />}
-                                    </IconButton>
-                                  </Tooltip>
+                                  <Box display="flex" gap={1}>
+                                    {issue.issueType === 'missing_in_db' && (
+                                      <Tooltip title="詳細デバッグ">
+                                        <IconButton
+                                          size="small"
+                                          color="info"
+                                          onClick={() => handleDebugIssue(issue)}
+                                        >
+                                          <AssessmentIcon />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                    <Tooltip title={
+                                      issue.issueType === 'missing_in_db' 
+                                        ? '孤立ファイルを削除' 
+                                        : 'DB参照を削除'
+                                    }>
+                                      <IconButton
+                                        edge="end"
+                                        color="primary"
+                                        onClick={() => handleFixIssue(issue)}
+                                        disabled={fixingIssues.has(issue.id)}
+                                      >
+                                        {issue.issueType === 'missing_in_db' ? <DeleteIcon /> : <RemoveCircleIcon />}
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </ListItemSecondaryAction>
                               </ListItem>
                               {index < issuesOfType.length - 1 && <Divider />}

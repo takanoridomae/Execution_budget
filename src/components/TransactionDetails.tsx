@@ -83,7 +83,7 @@ const TransactionDetails: React.FC = () => {
     handleExpenseExistingImageRemove
   } = useSiteDataEdit();
 
-  // 現場別収入データの表示
+  // 現場別入金データの表示
   const renderSiteIncomeItem = (income: SiteIncome) => {
     const site = sites.find(s => s.id === income.siteId);
     const siteName = site?.name || '不明な現場';
@@ -143,7 +143,7 @@ const TransactionDetails: React.FC = () => {
                         <img 
                           key={`income-local-${idx}`} 
                           src={imageData} 
-                          alt={`収入画像-${idx}`} 
+                          alt={`入金画像-${idx}`} 
                           style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
                         />
                       );
@@ -158,7 +158,7 @@ const TransactionDetails: React.FC = () => {
                       <img 
                         key={`income-url-${idx}`} 
                         src={url} 
-                        alt={`収入画像-${idx}`} 
+                        alt={`入金画像-${idx}`} 
                         style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid #ddd' }} 
                       />
                     ))}
@@ -174,7 +174,7 @@ const TransactionDetails: React.FC = () => {
                   size="small" 
                   color="primary"
                   onClick={() => {
-                    console.log('🔧 現場収入編集ボタンクリック', income);
+                    console.log('🔧 現場入金編集ボタンクリック', income);
                     startIncomeEdit(income);
                   }}
                 >
@@ -184,8 +184,8 @@ const TransactionDetails: React.FC = () => {
                   size="small" 
                   color="error"
                   onClick={() => {
-                    console.log('🗑️ 現場収入削除ボタンクリック', income);
-                    if (window.confirm('この収入記録を削除しますか？')) {
+                    console.log('🗑️ 現場入金削除ボタンクリック', income);
+                    if (window.confirm('この入金記録を削除しますか？')) {
                       handleIncomeDelete(income.id);
                     }
                   }}
@@ -485,7 +485,7 @@ const TransactionDetails: React.FC = () => {
         </Typography>
       ) : (
         <Box>
-          {/* 現場別収入セクション */}
+          {/* 現場別入金セクション */}
           {dayIncomes.length > 0 && (
             <Accordion 
               defaultExpanded
@@ -506,7 +506,7 @@ const TransactionDetails: React.FC = () => {
                 <Box display="flex" alignItems="center" gap={1}>
                   <TrendingUp sx={{ color: '#1976d2' }} />
                   <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
-                    収入 ({dayIncomes.length}件)
+                    入金 ({dayIncomes.length}件)
                   </Typography>
                   <Typography 
                     variant="body2" 
@@ -532,7 +532,7 @@ const TransactionDetails: React.FC = () => {
             </Accordion>
           )}
 
-          {/* 従来の収入セクション（後方互換性） */}
+          {/* 従来の入金セクション（後方互換性） */}
           {incomeTransactions.length > 0 && (
             <Accordion 
               defaultExpanded
@@ -553,7 +553,7 @@ const TransactionDetails: React.FC = () => {
                 <Box display="flex" alignItems="center" gap={1}>
                   <TrendingUp sx={{ color: '#1976d2' }} />
                   <Typography variant="h6" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
-                    収入 ({incomeTransactions.length}件)
+                    入金 ({incomeTransactions.length}件)
                   </Typography>
                   <Typography variant="body2" sx={{ ml: 1, color: '#1976d2' }}>
                     ¥{incomeTransactions.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}

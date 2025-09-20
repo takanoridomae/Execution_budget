@@ -369,7 +369,7 @@ const TransactionForm: React.FC = () => {
             value={transactionType}
             onChange={(e) => setTransactionType(e.target.value)}
           >
-            <FormControlLabel value="income" control={<Radio />} label="収入" />
+            <FormControlLabel value="income" control={<Radio />} label="入金" />
             <FormControlLabel value="expense" control={<Radio />} label="支出" />
           </RadioGroup>
         </FormControl>

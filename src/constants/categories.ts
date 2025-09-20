@@ -1,11 +1,11 @@
 import { IncomeCategory, ExpenseCategory } from '../types';
 
 /**
- * 収入カテゴリーの定義
+ * 入金カテゴリーの定義
  */
 export const INCOME_CATEGORIES: { value: IncomeCategory; label: string }[] = [
   { value: '給与', label: '給与' },
-  { value: '副収入', label: '副収入' },
+  { value: '副入金', label: '副入金' },
   { value: 'お小遣い', label: 'お小遣い' },
   { value: 'other', label: 'その他' }
 ];

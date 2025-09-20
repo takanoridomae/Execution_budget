@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Card, CardHeader, CardContent, Button, FormControl, Select, MenuItem, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody, InputLabel, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { Photo, Close, Article } from '@mui/icons-material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useSites } from '../contexts/SiteContext';
@@ -39,7 +39,7 @@ const Report: React.FC = () => {
       }
     });
     
-    // 収入データからも年月を抽出
+    // 入金データからも年月を抽出
     (siteIncomes ?? []).forEach(income => {
       if (income.date) {
         const yearMonth = income.date.substring(0, 7); // "YYYY-MM" 形式
@@ -227,9 +227,9 @@ const Report: React.FC = () => {
     return expenseSortOrder === 'asc' ? sorted : [...sorted].reverse();
   }, [siteExpenses, expenseSortOrder, filterYear, filterMonth, filterSiteId, filterCategoryId]);
   
-  // 収入明細のフィルタリング
+  // 入金明細のフィルタリング
   const sortedIncomeTx = useMemo(() => {
-    // 全収入データから検索
+    // 全入金データから検索
     const incomes = siteIncomes ?? [];
     
     // フィルターを適用
@@ -303,7 +303,7 @@ const Report: React.FC = () => {
     };
   }, [sortedExpenseTx, sites, categories]);
   
-  // 収入の検索結果サマリー情報を計算
+  // 入金の検索結果サマリー情報を計算
   const incomeSummary = useMemo(() => {
     const totalAmount = sortedIncomeTx.reduce((sum, income) => sum + income.amount, 0);
     const totalCount = sortedIncomeTx.length;
@@ -414,7 +414,7 @@ const Report: React.FC = () => {
       {/* 検索結果サマリー */}
       <Box sx={{ mb: 3 }}>
         <Card>
-          <CardHeader title="検索結果サマリー" subheader={`支出${expenseSummary.totalCount}件 / 収入${incomeSummary.totalCount}件`} />
+          <CardHeader title="検索結果サマリー" subheader={`支出${expenseSummary.totalCount}件 / 入金${incomeSummary.totalCount}件`} />
           <CardContent>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
               {/* 支出サマリー */}
@@ -461,15 +461,15 @@ const Report: React.FC = () => {
                 </Box>
               </Box>
               
-              {/* 収入サマリー */}
+              {/* 入金サマリー */}
               <Box>
                 <Box sx={{ fontSize: '1.1rem', fontWeight: 'bold', mb: 2, color: '#4caf50' }}>
-                  収入合計: {formatCurrency(incomeSummary.totalAmount)}
+                  入金合計: {formatCurrency(incomeSummary.totalAmount)}
                 </Box>
                 
-                {/* 収入現場別集計 */}
+                {/* 入金現場別集計 */}
                 <Box sx={{ mb: 2 }}>
-                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>収入現場別集計</Box>
+                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>入金現場別集計</Box>
                   {incomeSummary.bySite.map((site) => {
                     const siteColor = getSiteColor(site.siteId);
                     return (
@@ -492,7 +492,7 @@ const Report: React.FC = () => {
             </Box>
                 
                 {/* 収支差額 */}
-                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>収支差額</Box>
                   <Box sx={{ 
                     fontSize: '1.2rem', 
@@ -571,10 +571,26 @@ const Report: React.FC = () => {
                                   <Box>予算: {formatCurrency(data.budget)}</Box>
                                   <Box>実績: {formatCurrency(data.actual)}</Box>
                                   <Box sx={{ 
-                                    color: data.達成率 > 100 ? '#f44336' : '#4caf50',
-                                    fontWeight: 'bold'
+                                    color: data.達成率 === 100 ? '#4caf50' : data.達成率 > 100 ? '#f44336' : '#4caf50',
+                                    fontWeight: 'bold',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.5
                                   }}>
                                     達成率: {data.達成率}%
+                                    {data.達成率 === 100 && (
+                                      <Box sx={{ 
+                                        fontSize: '0.8rem', 
+                                        backgroundColor: '#4caf50', 
+                                        color: 'white', 
+                                        px: 0.5, 
+                                        py: 0.2, 
+                                        borderRadius: 0.5,
+                                        ml: 0.5
+                                      }}>
+                                        完了
+                                      </Box>
+                                    )}
                                   </Box>
                                 </Paper>
                               );
@@ -591,10 +607,16 @@ const Report: React.FC = () => {
                         />
                         <Bar 
                           dataKey="actual" 
-                          fill="#ff9800" 
                           name="実績"
                           radius={[2, 2, 0, 0]}
-                        />
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={entry.達成率 === 100 ? '#4caf50' : entry.達成率 > 100 ? '#f44336' : '#ff9800'} 
+                            />
+                          ))}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </Box>
@@ -621,8 +643,24 @@ const Report: React.FC = () => {
                         <Box sx={{ 
                           fontSize: '0.9rem', 
                           fontWeight: 'bold',
-                          color: item.達成率 > 100 ? '#f44336' : '#4caf50'
+                          color: item.達成率 === 100 ? '#4caf50' : item.達成率 > 100 ? '#f44336' : '#4caf50',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5
                         }}>
+                          {item.達成率 === 100 && (
+                            <Box sx={{ 
+                              fontSize: '0.8rem', 
+                              backgroundColor: '#4caf50', 
+                              color: 'white', 
+                              px: 0.5, 
+                              py: 0.2, 
+                              borderRadius: 0.5,
+                              mr: 0.5
+                            }}>
+                              完了
+                            </Box>
+                          )}
                           {item.達成率}%
                         </Box>
                       </Box>
@@ -709,7 +747,7 @@ const Report: React.FC = () => {
         </Card>
         
         <Card>
-          <CardHeader title="収入明細" subheader="収入の詳細を日付・現場・金額・内容で表示" />
+          <CardHeader title="入金明細" subheader="入金の詳細を日付・現場・金額・内容で表示" />
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
               <Button variant="outlined" size="small" onClick={toggleExpenseSort}>
@@ -717,7 +755,7 @@ const Report: React.FC = () => {
               </Button>
             </Box>
             <TableContainer component={Paper}>
-              <Table size="small" aria-label="収入明細テーブル">
+              <Table size="small" aria-label="入金明細テーブル">
                 <TableHead>
                   <TableRow>
                     <TableCell>日付</TableCell>

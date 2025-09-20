@@ -34,7 +34,18 @@ const SiteInfoCard: React.FC<SiteInfoCardProps> = ({
           {site.description}
         </Typography>
       )}
-      <Typography variant="body2" sx={{ mb: 1 }}>
+      <Typography variant="h6" sx={{ 
+        color: 'primary.main',
+        fontWeight: 'bold',
+        mb: 2,
+        mt: 1,
+        padding: 1,
+        backgroundColor: 'primary.50',
+        borderRadius: 1,
+        border: '1px solid',
+        borderColor: 'primary.200',
+        textAlign: 'center'
+      }}>
         <strong>予算合計:</strong> ¥{budget.toLocaleString()}
       </Typography>
       <Typography variant="body2" sx={{ mb: 1 }}>
@@ -57,7 +68,7 @@ const SiteInfoCard: React.FC<SiteInfoCardProps> = ({
         color: incomeMinusExpense >= 0 ? 'success.main' : 'error.main',
         fontWeight: 'bold'
       }}>
-        <strong>実績利益:</strong> {incomeMinusExpense >= 0 ? "+" : ""}¥{incomeMinusExpense.toLocaleString()}
+        <strong>実績損益:</strong> {incomeMinusExpense >= 0 ? "+" : ""}¥{incomeMinusExpense.toLocaleString()}
       </Typography>
 
       {/* 写真表示セクション */}

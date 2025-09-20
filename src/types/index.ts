@@ -1,5 +1,5 @@
 export type TransactionType = "income" | "expense";
-export type IncomeCategory = "給与" | "副収入" | "お小遣い" | "other";
+export type IncomeCategory = "給与" | "副入金" | "お小遣い" | "other";
 export type ExpenseCategory = "食費" | "朝食" | "昼食" | "夕食" | "夜食" | "昼間食" | "夜間食" | "飲料" | "日用品" | "交通費" | "医療費" | "教育費" | "交際費" | "その他";
 
 
@@ -100,7 +100,7 @@ export interface SiteTransaction {
     imageIds?: string[];
 }
 
-// 現場別収入トランザクション（収入専用）
+// 現場別入金トランザクション（入金専用）
 export interface SiteIncome {
     id: string;
     amount: number;
@@ -108,7 +108,7 @@ export interface SiteIncome {
     date: string;
     type: 'income'; // 固定値
     siteId: string;
-    category: '売上'; // 固定値
+    category: '入金'; // 固定値
     imageUrls?: string[];
     imageIds?: string[];
     documentUrls?: string[]; // Firebase Storageの書類URL配列

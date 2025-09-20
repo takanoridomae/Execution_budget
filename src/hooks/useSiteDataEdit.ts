@@ -43,7 +43,7 @@ export const useSiteDataEdit = () => {
   } = useTransactions();
   const { alert, showSuccess, showError } = useAlert();
   
-  // 現場収入編集用の状態
+  // 現場入金編集用の状態
   const [editingIncome, setEditingIncome] = useState<SiteIncome | null>(null);
   const [incomeEditForm, setIncomeEditForm] = useState<SiteIncomeEditForm>({
     amount: '',
@@ -72,9 +72,9 @@ export const useSiteDataEdit = () => {
     existingDocumentUrls: []
   });
 
-  // 現場収入編集開始
+  // 現場入金編集開始
   const startIncomeEdit = (income: SiteIncome) => {
-    console.log('📝 現場収入編集開始', income);
+    console.log('📝 現場入金編集開始', income);
     setEditingIncome(income);
     setIncomeEditForm({
       amount: income.amount.toString(),
@@ -155,7 +155,7 @@ export const useSiteDataEdit = () => {
     setExpenseEditForm(prev => ({ ...prev, [field]: value }));
   };
 
-  // 画像処理関数（収入用）
+  // 画像処理関数（入金用）
   const handleIncomeImageSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -188,7 +188,7 @@ export const useSiteDataEdit = () => {
   };
 
   const handleIncomeExistingImageRemove = (index: number, type: 'local' | 'firebase') => {
-    console.log('🗑️ 収入画像削除開始', {
+    console.log('🗑️ 入金画像削除開始', {
       index,
       type,
       currentImageIds: incomeEditForm.existingImageIds,
@@ -198,13 +198,13 @@ export const useSiteDataEdit = () => {
     if (type === 'local') {
       const imageIdToDelete = incomeEditForm.existingImageIds[index];
       if (imageIdToDelete && editingIncome) {
-        console.log('🗑️ 収入ローカル画像削除:', { imageId: imageIdToDelete, incomeId: editingIncome.id });
+        console.log('🗑️ 入金ローカル画像削除:', { imageId: imageIdToDelete, incomeId: editingIncome.id });
         const imageUtils = require('../utils/imageUtils');
         imageUtils.deleteImageFromLocalStorage(editingIncome.id, imageIdToDelete);
       }
       setIncomeEditForm(prev => {
         const newImageIds = prev.existingImageIds.filter((_, i) => i !== index);
-        console.log('📝 収入ローカル画像ID更新', { before: prev.existingImageIds, after: newImageIds });
+        console.log('📝  入金ローカル画像ID更新', { before: prev.existingImageIds, after: newImageIds });
         return {
           ...prev,
           existingImageIds: newImageIds
@@ -213,7 +213,7 @@ export const useSiteDataEdit = () => {
     } else {
       const imageUrlToDelete = incomeEditForm.existingImageUrls[index];
       if (imageUrlToDelete) {
-        console.log('🗑️ 収入Firebase画像削除:', { imageUrl: imageUrlToDelete });
+        console.log('🗑️ 入金Firebase画像削除:', { imageUrl: imageUrlToDelete });
         const imageUtils = require('../utils/imageUtils');
         imageUtils.deleteImageFromFirebaseStorage(imageUrlToDelete).catch((error: any) => {
           console.warn('⚠️ Firebase画像削除失敗（続行）:', error);
@@ -221,7 +221,7 @@ export const useSiteDataEdit = () => {
       }
       setIncomeEditForm(prev => {
         const newImageUrls = prev.existingImageUrls.filter((_, i) => i !== index);
-        console.log('📝 収入Firebase画像URL更新', { before: prev.existingImageUrls, after: newImageUrls });
+        console.log('📝 入金Firebase画像URL更新', { before: prev.existingImageUrls, after: newImageUrls });
         return {
           ...prev,
           existingImageUrls: newImageUrls
@@ -305,14 +305,14 @@ export const useSiteDataEdit = () => {
     }
   };
 
-  // 現場収入保存
+  // 現場入金保存
   const handleIncomeSave = async () => {
     if (!editingIncome) {
-      console.log('❌ 編集対象の現場収入がありません');
+      console.log('❌ 編集対象の現場入金がありません');
       return;
     }
 
-    console.log('💾 現場収入編集保存開始', {
+    console.log('💾 現場入金編集保存開始', {
       incomeId: editingIncome.id,
       editForm: incomeEditForm
     });
@@ -338,7 +338,7 @@ export const useSiteDataEdit = () => {
           newImageIds = results.filter(r => r.imageId).map(r => r.imageId!);
           newImageUrls = results.filter(r => r.imageUrl).map(r => r.imageUrl!);
           
-          console.log('🖼️ 収入画像保存結果:', {
+          console.log('🖼️ 入金画像保存結果:', {
             imageIds: newImageIds,
             imageUrls: newImageUrls
           });
@@ -351,7 +351,7 @@ export const useSiteDataEdit = () => {
       // 新しい書類がある場合は保存処理
       if (incomeEditForm.documentFiles && incomeEditForm.documentFiles.length > 0) {
         try {
-          console.log('📄 現場収入書類ハイブリッド保存開始', {
+          console.log('📄 現場入金書類ハイブリッド保存開始', {
             transactionId: editingIncome.id,
             fileCount: incomeEditForm.documentFiles.length
           });
@@ -372,7 +372,7 @@ export const useSiteDataEdit = () => {
             combinedSaveReport += ` (ローカル保存・Firebase準備中)`;
           }
           
-          console.log('✅ 現場収入書類ハイブリッド保存完了', {
+          console.log('✅ 現場入金書類ハイブリッド保存完了', {
             成功数: results.length,
             ローカル: localCount,
             Firebase: firebaseCount,
@@ -399,17 +399,17 @@ export const useSiteDataEdit = () => {
       const deletedDocumentUrls = originalDocumentUrls.filter(url => !allDocumentUrls.includes(url));
       
       if (deletedDocumentIds.length > 0) {
-        console.log('🗑️ 削除された収入書類ID', deletedDocumentIds);
+        console.log('🗑️ 削除された入金書類ID', deletedDocumentIds);
         deletedDocumentIds.forEach(documentId => {
           deleteDocumentFromLocalStorage(editingIncome.id, documentId);
         });
       }
 
       if (deletedDocumentUrls.length > 0) {
-        console.log('🗑️ 削除された収入書類URL', deletedDocumentUrls);
+        console.log('🗑️ 削除された入金書類URL', deletedDocumentUrls);
       }
 
-      console.log('🖼️📄 収入ファイルデータ計算', {
+      console.log('🖼️📄 入金ファイルデータ計算', {
         existingImageIds: incomeEditForm.existingImageIds,
         existingImageUrls: incomeEditForm.existingImageUrls,
         existingDocumentIds: incomeEditForm.existingDocumentIds,
@@ -437,14 +437,14 @@ export const useSiteDataEdit = () => {
       updateData.documentIds = allDocumentIds;
       updateData.documentUrls = allDocumentUrls;
       
-      console.log('💾 現場収入更新データ', updateData);
+      console.log('💾 現場入金更新データ', updateData);
       
       await updateSiteIncome(editingIncome.id, updateData);
-      console.log('✅ 現場収入更新完了');
+      console.log('✅ 現場入金更新完了');
       
       const successMessage = combinedSaveReport ? 
-        `現場収入を更新しました！${combinedSaveReport}` : 
-        '現場収入を更新しました！';
+        `現場入金を更新しました！${combinedSaveReport}` : 
+        '現場入金を更新しました！';
       showSuccess(successMessage);
       setEditingIncome(null);
       setIncomeEditForm({ 
@@ -459,7 +459,7 @@ export const useSiteDataEdit = () => {
         existingDocumentUrls: []
       });
     } catch (error: any) {
-      console.error('❌ 現場収入編集保存エラー', error);
+      console.error('❌ 現場入金編集保存エラー', error);
       showError(`更新に失敗しました: ${error.message || 'Unknown error'}`);
     }
   };
@@ -634,12 +634,12 @@ export const useSiteDataEdit = () => {
   // 削除処理
   const handleIncomeDelete = async (id: string) => {
     try {
-      console.log('🗑️ 現場収入削除開始', id);
+      console.log('🗑️ 現場入金削除開始', id);
       await deleteSiteIncome(id);
-      console.log('✅ 現場収入削除完了');
-      showSuccess('現場収入を削除しました');
+      console.log('✅ 現場入金削除完了');
+      showSuccess('現場入金を削除しました');
     } catch (error: any) {
-      console.error('❌ 現場収入削除エラー', error);
+      console.error('❌ 現場入金削除エラー', error);
       showError(`削除に失敗しました: ${error.message || 'Unknown error'}`);
     }
   };
@@ -657,7 +657,7 @@ export const useSiteDataEdit = () => {
   };
 
   return {
-    // 現場収入編集用
+    // 現場入金編集用
     editingIncome,
     incomeEditForm,
     startIncomeEdit,

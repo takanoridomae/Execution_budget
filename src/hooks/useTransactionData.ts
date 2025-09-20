@@ -25,7 +25,7 @@ export const useTransactionData = () => {
     const day = selectedDate.getDate();
     const dateKey = formatDateKey(year, month, day);
     
-    // 現場別収入データから該当日の収入を計算
+    // 現場別入金データから該当日の入金を計算
     const dayIncome = siteIncomes
       .filter(income => income.date === dateKey)
       .reduce((sum, income) => sum + income.amount, 0);
@@ -45,7 +45,7 @@ export const useTransactionData = () => {
     };
   }, [siteIncomes, siteExpenses, selectedDate]);
 
-  // 選択日の現場別収入データを取得
+  // 選択日の現場別入金データを取得
   const dayIncomes = useMemo(() => {
     if (!selectedDate) return [];
     
@@ -81,7 +81,7 @@ export const useTransactionData = () => {
     return transactions.filter(t => t.date === dateKey);
   }, [transactions, selectedDate]);
 
-  // 選択日の収入取引を取得（後方互換性のため維持）
+  // 選択日の入金取引を取得（後方互換性のため維持）
   const incomeTransactions = useMemo((): Transaction[] => {
     return getDayTransactions.filter(t => t.type === 'income');
   }, [getDayTransactions]);
@@ -110,7 +110,7 @@ export const useTransactionData = () => {
     const day = date.getDate();
     const dateKey = formatDateKey(year, month, day);
     
-    // 現場別収入データから該当日の収入を計算
+    // 現場別入金データから該当日の入金を計算
     const dayIncome = siteIncomes
       .filter(income => income.date === dateKey)
       .reduce((sum, income) => sum + income.amount, 0);

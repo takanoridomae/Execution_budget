@@ -5,7 +5,7 @@ import { Transaction } from '../types';
  */
 
 /**
- * 指定された取引リストから収入・支出・残高を計算
+ * 指定された取引リストから入金・支出・残高を計算
  */
 export const calculateFinancialSummary = (transactions: Transaction[]) => {
   const income = transactions
