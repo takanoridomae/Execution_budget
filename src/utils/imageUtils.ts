@@ -417,6 +417,58 @@ export const getAllImagesForTransaction = (transaction: {
   return images;
 };
 
+// 日記帳用の統一画像表示機能
+export const getAllImagesForDiary = (diary: {
+  id: string;
+  imageIds?: string[];
+  imageUrls?: string[];
+}): Array<{ src: string; type: 'local' | 'firebase'; id?: string; url?: string }> => {
+  const images: Array<{ src: string; type: 'local' | 'firebase'; id?: string; url?: string }> = [];
+  
+  console.log('🔍 日記帳画像読み込み開始', {
+    diaryId: diary.id,
+    imageIds: diary.imageIds?.length || 0,
+    imageUrls: diary.imageUrls?.length || 0
+  });
+  
+  // ローカルストレージの画像を追加
+  if (diary.imageIds && diary.imageIds.length > 0) {
+    diary.imageIds.forEach((imageId) => {
+      const imageData = getImageFromLocalStorage(diary.id, imageId);
+      if (imageData) {
+        images.push({
+          src: imageData,
+          type: 'local',
+          id: imageId
+        });
+        console.log('✅ ローカル画像読み込み成功', { imageId });
+      } else {
+        console.log('⚠️ ローカル画像読み込み失敗', { imageId });
+      }
+    });
+  }
+  
+  // Firebase Storageの画像を追加
+  if (diary.imageUrls && diary.imageUrls.length > 0) {
+    diary.imageUrls.forEach((url) => {
+      images.push({
+        src: url,
+        type: 'firebase',
+        url: url
+      });
+      console.log('✅ Firebase画像URL追加', { url });
+    });
+  }
+  
+  console.log('📊 日記帳画像読み込み完了', {
+    総画像数: images.length,
+    ローカル: images.filter(img => img.type === 'local').length,
+    Firebase: images.filter(img => img.type === 'firebase').length
+  });
+  
+  return images;
+};
+
 // プレビュー用サムネイル生成（統一画像表示）
 export const renderImageThumbnails = (
   transaction: { id: string; imageIds?: string[]; imageUrls?: string[] },
@@ -790,6 +842,206 @@ export const saveSiteImagesHybridBatch = async (
     成功数: results.length,
     ローカル: results.filter(r => r.saveMethod === 'local').length,
     Firebase: results.filter(r => r.saveMethod === 'firebase').length
+  });
+  
+  return results;
+};
+
+// 日記帳用Firebase Storageアップロード
+export const uploadDiaryImageToFirebaseStorage = async (
+  diaryId: string,
+  file: File
+): Promise<string> => {
+  console.log('☁️ 日記帳画像 Firebase Storage アップロード開始', {
+    fileName: file.name,
+    size: file.size,
+    diaryId
+  });
+
+  try {
+    // より強い圧縮（無料枠節約）
+    const isMobile = isMobileDevice();
+    const maxWidth = isMobile ? 500 : 700;
+    const maxHeight = isMobile ? 400 : 500;
+    const quality = isMobile ? 0.5 : 0.6;
+    
+    const compressedBase64 = await resizeImage(file, maxWidth, maxHeight, quality);
+    const blob = base64ToBlob(compressedBase64);
+    
+    console.log('📊 日記帳画像圧縮完了', {
+      元サイズ: `${Math.round(file.size / 1024)} KB`,
+      圧縮後: `${Math.round(blob.size / 1024)} KB`,
+      圧縮率: `${Math.round((1 - blob.size / file.size) * 100)}%`
+    });
+    
+    // Firebase Storageにアップロード（日記帳用パス）
+    const timestamp = Date.now();
+    const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+    const storageRef = ref(storage, `site-diaries/${diaryId}/images/${fileName}`);
+    
+    // メタデータを明示的に設定
+    const metadata = {
+      contentType: 'image/jpeg',
+      customMetadata: {
+        'originalFileName': file.name,
+        'diaryId': diaryId,
+        'uploadTimestamp': timestamp.toString()
+      }
+    };
+    
+    console.log('📤 日記帳画像 Firebase Storage アップロード中...', {
+      path: `site-diaries/${diaryId}/images/${fileName}`,
+      contentType: metadata.contentType,
+      blobSize: blob.size
+    });
+    
+    const snapshot = await uploadBytes(storageRef, blob, metadata);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    
+    console.log('✅ 日記帳画像 Firebase Storage アップロード完了', {
+      URL: downloadURL,
+      サイズ: `${Math.round(blob.size / 1024)} KB`,
+      fullPath: snapshot.ref.fullPath
+    });
+    
+    return downloadURL;
+    
+  } catch (error: any) {
+    console.error('❌ 日記帳画像 Firebase Storage アップロード失敗:', error);
+    
+    // エラータイプによる詳細分析
+    if (error.code) {
+      switch (error.code) {
+        case 'storage/unauthorized':
+          throw new Error('Firebase Storageの権限がありません。セキュリティルールを確認してください。');
+        case 'storage/canceled':
+          throw new Error('アップロードがキャンセルされました。');
+        case 'storage/unknown':
+          throw new Error('不明なエラーが発生しました。ネットワーク接続を確認してください。');
+        case 'storage/retry-limit-exceeded':
+          throw new Error('アップロードのリトライ上限に達しました。しばらく後に再試行してください。');
+        default:
+          throw new Error(`Firebase Storageエラー (${error.code}): ${error.message}`);
+      }
+    }
+    
+    throw new Error(`日記帳画像のFirebase Storageへのアップロードに失敗しました: ${error.message || error}`);
+  }
+};
+
+// 日記帳用ハイブリッド画像保存
+export const saveDiaryImageHybrid = async (
+  diaryId: string,
+  file: File
+): Promise<{ imageId?: string; imageUrl?: string; saveMethod: 'local' | 'firebase' }> => {
+  console.log('🔄 日記帳画像ハイブリッド保存開始', {
+    fileName: file.name,
+    size: `${Math.round(file.size / 1024)} KB`,
+    diaryId
+  });
+
+  // Firebase Storage優先で保存
+  const storageStatus = await checkFirebaseStorageUsage();
+  
+  if (storageStatus.canUpload) {
+    try {
+      const imageUrl = await uploadDiaryImageToFirebaseStorage(diaryId, file);
+      console.log('✅ 日記帳画像 Firebase Storage保存成功', { imageUrl });
+      return { imageUrl, saveMethod: 'firebase' };
+    } catch (firebaseError: any) {
+      console.warn('⚠️ 日記帳画像 Firebase Storage保存失敗:', firebaseError);
+      
+      // 403エラー（権限）の場合、詳細なメッセージを表示
+      if (firebaseError.code === 'storage/unauthorized') {
+        console.error('🚫 Firebase Storage権限エラー: Firebaseコンソールでルールを確認してください');
+        console.log('💡 Firebase Console > Storage > Rules で以下のパスを確認:');
+        console.log(`   site-diaries/${diaryId}/images/{imageId}`);
+      }
+      
+      // ローカル保存にフォールバック
+      try {
+        const compressedBase64 = await resizeImage(file, 600, 400, 0.7);
+        const usage = checkLocalStorageUsage();
+        
+        if (usage.percentage < 90) {
+          const imageId = saveImageToLocalStorage(diaryId, compressedBase64);
+          console.log('✅ 日記帳画像ローカル保存成功（Firebase失敗時フォールバック）', {
+            imageId,
+            使用率: `${Math.round(usage.percentage)}%`
+          });
+          return { imageId, saveMethod: 'local' };
+        }
+      } catch (localError) {
+        console.error('❌ 日記帳画像ローカル保存も失敗:', localError);
+      }
+      
+      throw firebaseError;
+    }
+  } else {
+    console.log('⚠️ Firebase無料枠上限、ローカルストレージを使用');
+    
+    try {
+      const compressedBase64 = await resizeImage(file, 600, 400, 0.7);
+      const usage = checkLocalStorageUsage();
+      
+      if (usage.percentage < 90) {
+        const imageId = saveImageToLocalStorage(diaryId, compressedBase64);
+        console.log('✅ 日記帳画像ローカル保存成功（Firebase枠上限）', {
+          imageId,
+          使用率: `${Math.round(usage.percentage)}%`
+        });
+        return { imageId, saveMethod: 'local' };
+      } else {
+        throw new Error('ローカルストレージ容量不足');
+      }
+    } catch (localError) {
+      console.error('❌ 日記帳画像ローカル保存失敗:', localError);
+      throw new Error('Firebase無料枠上限かつローカルストレージ容量不足です。');
+    }
+  }
+};
+
+// 日記帳用バッチ画像保存
+export const saveDiaryImagesHybridBatch = async (
+  diaryId: string,
+  files: File[]
+): Promise<Array<{ imageId?: string; imageUrl?: string; saveMethod: 'local' | 'firebase'; fileName: string }>> => {
+  console.log('📦 日記帳画像ハイブリッドバッチ保存開始', {
+    ファイル数: files.length,
+    総サイズ: `${Math.round(files.reduce((sum, f) => sum + f.size, 0) / 1024)} KB`,
+    diaryId
+  });
+
+  const results = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    console.log(`📦 日記帳画像処理中 ${i + 1}/${files.length}: ${file.name}`);
+    
+    try {
+      const result = await saveDiaryImageHybrid(diaryId, file);
+      results.push({
+        ...result,
+        fileName: file.name
+      });
+      
+      // 連続アップロード時の負荷軽減
+      if (i < files.length - 1) {
+        const delay = result.saveMethod === 'firebase' ? 500 : 200;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      
+    } catch (error) {
+      console.error(`❌ 日記帳画像ファイル ${i + 1} 保存失敗: ${file.name}`, error);
+      // エラーでも続行（部分保存）
+      continue;
+    }
+  }
+  
+  console.log('📦 日記帳画像バッチ保存完了', {
+    成功数: results.length,
+    Firebase: results.filter(r => r.saveMethod === 'firebase').length,
+    ローカル: results.filter(r => r.saveMethod === 'local').length
   });
   
   return results;

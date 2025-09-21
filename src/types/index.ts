@@ -129,3 +129,19 @@ export interface SiteExpense {
     documentUrls?: string[]; // Firebase Storageの書類URL配列
     documentIds?: string[];  // ローカルストレージ用の書類ID配列
 }
+
+// 現場日記帳
+export interface SiteDiary {
+    id: string;
+    recordDate: string; // 記載日 (YYYY-MM-DD形式)
+    siteId: string; // 現場ID
+    categoryId: string; // カテゴリーID
+    title: string; // 表題
+    content: string; // 日記明細
+    createdAt: string;
+    updatedAt: string;
+    imageUrls?: string[]; // Firebase Storageの画像URL配列
+    imageIds?: string[];  // ローカルストレージ用の画像ID配列
+    documentUrls?: string[]; // Firebase Storageの書類URL配列
+    documentIds?: string[];  // ローカルストレージ用の書類ID配列
+}

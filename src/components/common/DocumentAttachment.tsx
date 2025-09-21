@@ -263,8 +263,8 @@ const DocumentAttachment: React.FC<DocumentAttachmentProps> = ({
                 
                 <ListItemText
                   primary={
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Typography variant="body2" noWrap>
+                    <>
+                      <Typography component="span" variant="body2" noWrap sx={{ mr: 1 }}>
                         {document.fileName}
                       </Typography>
                       <Chip
@@ -274,14 +274,12 @@ const DocumentAttachment: React.FC<DocumentAttachmentProps> = ({
                         variant="outlined"
                         sx={{ fontSize: '0.7rem', height: 20 }}
                       />
-                    </Box>
+                    </>
                   }
                   secondary={
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        {document.size ? formatFileSize(document.size) : ''} • {new Date(document.uploadedAt).toLocaleString('ja-JP')}
-                      </Typography>
-                    </Box>
+                    <Typography component="span" variant="caption" color="text.secondary">
+                      {document.size ? formatFileSize(document.size) : ''} • {new Date(document.uploadedAt).toLocaleString('ja-JP')}
+                    </Typography>
                   }
                 />
                 

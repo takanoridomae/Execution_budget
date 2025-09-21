@@ -44,6 +44,11 @@ service cloud.firestore {
       allow read, write: if true; // デモアプリのため全許可
     }
     
+    // 現場日記帳コレクション
+    match /SiteDiaries/{diaryId} {
+      allow read, write: if true; // デモアプリのため全許可
+    }
+    
     // システム管理用コレクション（将来的な拡張）
     match /SystemSettings/{document} {
       allow read: if true;

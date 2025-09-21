@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Card, CardHeader, CardContent, Button, FormControl, Select, MenuItem, TableContainer, Paper, Table, TableHead, TableRow, TableCell, TableBody, InputLabel, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { Photo, Close, Article } from '@mui/icons-material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { useTransactions } from '../contexts/TransactionContext';
 import { useCategories } from '../contexts/CategoryContext';
 import { useSites } from '../contexts/SiteContext';
@@ -13,6 +13,15 @@ interface ChartDataItem {
   categoryId: string;
   budget: number;
   actual: number;
+  達成率: number;
+}
+
+interface PieChartDataItem {
+  name: string;
+  value: number;
+  実績額: number;
+  予算額: number;
+  未使用額: number;
   達成率: number;
 }
 
@@ -367,6 +376,49 @@ const Report: React.FC = () => {
     return data.sort((a, b) => b.budget - a.budget);
   }, [filterSiteId, getActiveCategoriesBySite, sortedExpenseTx]);
 
+  // カテゴリー毎の円グラフ用データ：予算100%として実績%を表示
+  const pieChartDataList = useMemo((): PieChartDataItem[][] => {
+    return chartData.map(category => {
+      const 実績率 = Math.min(category.達成率, 100); // 100%以上は100%でキャップ
+      const 未使用率 = Math.max(100 - category.達成率, 0); // 未使用分
+
+      // 予算を100%として、実績%と未使用%のデータを作成
+      const pieData: PieChartDataItem[] = [
+        {
+          name: '実績',
+          value: 実績率,
+          実績額: category.actual,
+          予算額: category.budget,
+          未使用額: Math.max(category.budget - category.actual, 0),
+          達成率: category.達成率
+        },
+        {
+          name: '未使用',
+          value: 未使用率,
+          実績額: category.actual,
+          予算額: category.budget,
+          未使用額: Math.max(category.budget - category.actual, 0),
+          達成率: category.達成率
+        }
+      ];
+
+      // 100%を超過している場合は、超過分も表示
+      if (category.達成率 > 100) {
+        const 超過率 = category.達成率 - 100;
+        pieData.push({
+          name: '超過',
+          value: 超過率,
+          実績額: category.actual,
+          予算額: category.budget,
+          未使用額: 0,
+          達成率: category.達成率
+        });
+      }
+
+      return pieData;
+    });
+  }, [chartData]);
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
@@ -524,101 +576,105 @@ const Report: React.FC = () => {
               {chartData.length > 0 ? (
                 <>
                   
-                  <Box sx={{ width: '100%', height: 500 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={chartData}
-                        margin={{
-                          top: 20,
-                          right: 30,
-                          left: 20,
-                          bottom: 80,
-                        }}
-                        barCategoryGap="20%"
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis 
-                          dataKey="name" 
-                          angle={-45}
-                          textAnchor="end"
-                          height={80}
-                          fontSize={11}
-                          interval={0}
-                        />
-                        <YAxis 
-                          tickFormatter={(value) => {
-                            if (value >= 1000000) {
-                              return `¥${(value / 1000000).toFixed(1)}M`;
-                            } else if (value >= 10000) {
-                              return `¥${(value / 10000).toFixed(0)}万`;
-                            } else if (value >= 1000) {
-                              return `¥${(value / 1000).toFixed(0)}K`;
-                            } else {
-                              return `¥${value}`;
-                            }
-                          }}
-                          domain={[0, 'dataMax']}
-                        />
-                        <Tooltip 
-                          formatter={(value, name) => [formatCurrency(Number(value)), name]}
-                          labelFormatter={(label) => `カテゴリー: ${label}`}
-                          content={({ active, payload, label }) => {
-                            if (active && payload && payload.length) {
-                              const data = payload[0].payload;
-                              return (
-                                <Paper sx={{ p: 2, boxShadow: 3 }}>
-                                  <Box sx={{ fontWeight: 'bold', mb: 1 }}>{label}</Box>
-                                  <Box>予算: {formatCurrency(data.budget)}</Box>
-                                  <Box>実績: {formatCurrency(data.actual)}</Box>
-                                  <Box sx={{ 
-                                    color: data.達成率 === 100 ? '#4caf50' : data.達成率 > 100 ? '#f44336' : '#4caf50',
-                                    fontWeight: 'bold',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 0.5
-                                  }}>
-                                    達成率: {data.達成率}%
-                                    {data.達成率 === 100 && (
-                                      <Box sx={{ 
-                                        fontSize: '0.8rem', 
-                                        backgroundColor: '#4caf50', 
-                                        color: 'white', 
-                                        px: 0.5, 
-                                        py: 0.2, 
-                                        borderRadius: 0.5,
-                                        ml: 0.5
-                                      }}>
-                                        完了
-                                      </Box>
-                                    )}
-                                  </Box>
-                                </Paper>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                        <Legend />
-                        <Bar 
-                          dataKey="budget" 
-                          fill="#2196f3" 
-                          name="予算"
-                          radius={[2, 2, 0, 0]}
-                        />
-                        <Bar 
-                          dataKey="actual" 
-                          name="実績"
-                          radius={[2, 2, 0, 0]}
-                        >
-                          {chartData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={entry.達成率 === 100 ? '#4caf50' : entry.達成率 > 100 ? '#f44336' : '#ff9800'} 
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* カテゴリー毎の円グラフ表示 */}
+                  <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+                    gap: 3,
+                    width: '100%'
+                  }}>
+                    {chartData.map((category, categoryIndex) => {
+                      const pieData = pieChartDataList[categoryIndex];
+                      const 色配列 = ['#4caf50', '#ef9a9a', '#f44336']; // 実績、未使用、超過
+                      
+                      return (
+                        <Box key={category.categoryId} sx={{ 
+                          textAlign: 'center',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: 2,
+                          p: 2
+                        }}>
+                          <Box sx={{ fontSize: '1.1rem', fontWeight: 'bold', mb: 1.5 }}>
+                            {category.name}
+                          </Box>
+                          <Box sx={{ height: 280 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart margin={{ top: 5, right: 20, bottom: 20, left: 20 }}>
+                                <Pie
+                                  data={pieData}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, value }) => (value && value > 0) ? `${value.toFixed(1)}%` : ''}
+                                  outerRadius={70}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                  startAngle={90}
+                                  endAngle={-270}
+                                >
+                                  {pieData.map((entry, index) => (
+                                    <Cell 
+                                      key={`cell-${index}`} 
+                                      fill={色配列[index % 色配列.length]} 
+                                    />
+                                  ))}
+                                </Pie>
+                                <Tooltip 
+                                  content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                      const data = payload[0].payload as PieChartDataItem;
+                                      return (
+                                        <Paper sx={{ p: 2, boxShadow: 3 }}>
+                                          <Box sx={{ fontWeight: 'bold', mb: 1 }}>{category.name}</Box>
+                                          <Box>予算: {formatCurrency(data.予算額)}</Box>
+                                          <Box>実績: {formatCurrency(data.実績額)}</Box>
+                                          <Box>未使用: {formatCurrency(data.未使用額)}</Box>
+                                          <Box sx={{ 
+                                            color: data.達成率 === 100 ? '#4caf50' : data.達成率 > 100 ? '#f44336' : '#4caf50',
+                                            fontWeight: 'bold',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 0.5
+                                          }}>
+                                            進捗率: {data.達成率}%
+                                            {data.達成率 === 100 && (
+                                              <Box sx={{ 
+                                                fontSize: '0.8rem', 
+                                                backgroundColor: '#4caf50', 
+                                                color: 'white', 
+                                                px: 0.5, 
+                                                py: 0.2, 
+                                                borderRadius: 0.5,
+                                                ml: 0.5
+                                              }}>
+                                                完了
+                                              </Box>
+                                            )}
+                                          </Box>
+                                        </Paper>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </Box>
+                          <Box sx={{ mt: 1, fontSize: '0.9rem', color: 'text.secondary' }}>
+                            予算: {formatCurrency(category.budget)} / 実績: {formatCurrency(category.actual)}
+                          </Box>
+                          <Box sx={{ 
+                            mt: 0.5, 
+                            fontSize: '1rem', 
+                            fontWeight: 'bold',
+                            color: category.達成率 === 100 ? '#4caf50' : category.達成率 > 100 ? '#f44336' : '#ff9800'
+                          }}>
+                            進捗率: {category.達成率}%
+                          </Box>
+                        </Box>
+                      );
+                    })}
                   </Box>
                 </>
               ) : (
@@ -628,43 +684,6 @@ const Report: React.FC = () => {
                   </Box>
                   <Box sx={{ color: 'text.secondary' }}>
                     カテゴリー管理画面で現場のカテゴリーを追加してください
-                  </Box>
-                </Box>
-              )}
-              
-              {/* 達成率サマリー */}
-              {chartData.length > 0 && (
-                <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-                  <Box sx={{ fontSize: '1rem', fontWeight: 'bold', mb: 1 }}>カテゴリー別達成率</Box>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 1 }}>
-                    {chartData.map((item: ChartDataItem) => (
-                      <Box key={item.categoryId} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Box sx={{ fontSize: '0.9rem' }}>{item.name}</Box>
-                        <Box sx={{ 
-                          fontSize: '0.9rem', 
-                          fontWeight: 'bold',
-                          color: item.達成率 === 100 ? '#4caf50' : item.達成率 > 100 ? '#f44336' : '#4caf50',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 0.5
-                        }}>
-                          {item.達成率 === 100 && (
-                            <Box sx={{ 
-                              fontSize: '0.8rem', 
-                              backgroundColor: '#4caf50', 
-                              color: 'white', 
-                              px: 0.5, 
-                              py: 0.2, 
-                              borderRadius: 0.5,
-                              mr: 0.5
-                            }}>
-                              完了
-                            </Box>
-                          )}
-                          {item.達成率}%
-                        </Box>
-                      </Box>
-                    ))}
                   </Box>
                 </Box>
               )}

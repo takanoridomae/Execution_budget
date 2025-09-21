@@ -22,6 +22,18 @@ service firebase.storage {
       allow read, write: if true;
     }
     
+    // 日記帳の画像
+    match /site-diaries/{diaryId}/images/{imageId} {
+      // 読み取り・書き込み: 全ユーザー許可（デモアプリのため）
+      allow read, write: if true;
+    }
+    
+    // 日記帳の書類
+    match /site-diaries/{diaryId}/documents/{documentId} {
+      // 読み取り・書き込み: 全ユーザー許可（デモアプリのため）
+      allow read, write: if true;
+    }
+    
     // 接続テスト用（一時的）
     match /test/{testFile} {
       allow read, write: if true;

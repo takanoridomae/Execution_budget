@@ -300,7 +300,42 @@ const StorageIntegrityChecker: React.FC<StorageIntegrityCheckerProps> = ({ open,
       case 'siteCategory': return '現場カテゴリ';
       case 'siteIncome': return '現場入金';
       case 'siteExpense': return '現場支出';
+      case 'siteDiary': return '現場日記帳';
       default: return entityType;
+    }
+  };
+
+  // エンティティの詳細表示情報を取得
+  const getEntityDetails = (issue: IntegrityIssue) => {
+    const entityData = issue.entityData;
+    if (!entityData) return `ID: ${issue.entityId}`;
+
+    switch (issue.entityType) {
+      case 'siteDiary':
+        // 日記帳：日付と表題を横並び表示
+        const recordDate = entityData.recordDate ? new Date(entityData.recordDate).toLocaleDateString('ja-JP') : '不明';
+        const title = entityData.title || '無題';
+        return `${recordDate} | ${title}`;
+      
+      case 'transaction':
+        const transactionDate = entityData.date ? new Date(entityData.date).toLocaleDateString('ja-JP') : '不明';
+        const description = entityData.description || 'トランザクション';
+        return `${transactionDate} | ${description}`;
+      
+      case 'site':
+        return entityData.name || `現場 ID: ${issue.entityId}`;
+      
+      case 'siteCategory':
+        return entityData.name || `カテゴリ ID: ${issue.entityId}`;
+      
+      case 'siteIncome':
+      case 'siteExpense':
+        const itemDate = entityData.date ? new Date(entityData.date).toLocaleDateString('ja-JP') : '不明';
+        const itemDescription = entityData.description || (issue.entityType === 'siteIncome' ? '入金' : '支出');
+        return `${itemDate} | ${itemDescription}`;
+      
+      default:
+        return `ID: ${issue.entityId}`;
     }
   };
 
@@ -490,10 +525,13 @@ const StorageIntegrityChecker: React.FC<StorageIntegrityCheckerProps> = ({ open,
                                   primary={
                                     <Box>
                                       <Typography variant="subtitle2">
-                                        {issue.entityType}: {issue.entityId}
+                                        {getEntityDisplayName(issue.entityType)}
                                       </Typography>
                                       <Typography variant="body2" color="textSecondary">
-                                        フィールド: {issue.field}
+                                        {getEntityDetails(issue)}
+                                      </Typography>
+                                      <Typography variant="caption" color="textSecondary">
+                                        フィールド: {issue.field} | ID: {issue.entityId}
                                       </Typography>
                                     </Box>
                                   }

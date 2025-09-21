@@ -3,12 +3,12 @@
 import { collection, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { ref, listAll, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { Transaction, Site, SiteCategory, SiteIncome, SiteExpense } from '../types';
+import { Transaction, Site, SiteCategory, SiteIncome, SiteExpense, SiteDiary } from '../types';
 
 // 整合性チェック結果の型定義
 export interface IntegrityIssue {
   id: string;
-  entityType: 'transaction' | 'site' | 'siteCategory' | 'siteIncome' | 'siteExpense';
+  entityType: 'transaction' | 'site' | 'siteCategory' | 'siteIncome' | 'siteExpense' | 'siteDiary';
   entityId: string;
   issueType: 'missing_in_storage' | 'missing_in_db' | 'broken_url';
   field: 'imageUrls' | 'documentUrls';
@@ -123,6 +123,7 @@ export const getAllStorageFieldDocuments = async (): Promise<{
   siteCategories: SiteCategory[];
   siteIncomes: SiteIncome[];
   siteExpenses: SiteExpense[];
+  siteDiaries: SiteDiary[];
 }> => {
   console.log('🔍 ストレージフィールドを持つ全ドキュメントを取得中...');
   
@@ -131,7 +132,8 @@ export const getAllStorageFieldDocuments = async (): Promise<{
     sites: [] as Site[],
     siteCategories: [] as SiteCategory[],
     siteIncomes: [] as SiteIncome[],
-    siteExpenses: [] as SiteExpense[]
+    siteExpenses: [] as SiteExpense[],
+    siteDiaries: [] as SiteDiary[]
   };
 
   try {
@@ -193,12 +195,38 @@ export const getAllStorageFieldDocuments = async (): Promise<{
       }
     });
 
+    // SiteDiariesコレクション
+    console.log('🔍 SiteDiariesコレクション取得開始...');
+    const siteDiariesSnapshot = await getDocs(collection(db, 'SiteDiaries'));
+    console.log(`📊 SiteDiaries総数: ${siteDiariesSnapshot.size}`);
+    
+    siteDiariesSnapshot.forEach((doc) => {
+      const data = doc.data() as SiteDiary;
+      console.log(`🔍 SiteDiaryドキュメント: ${doc.id}`, {
+        hasImageUrls: !!data.imageUrls?.length,
+        hasDocumentUrls: !!data.documentUrls?.length,
+        hasImageIds: !!data.imageIds?.length,
+        hasDocumentIds: !!data.documentIds?.length,
+        imageUrlsLength: data.imageUrls?.length || 0,
+        documentUrlsLength: data.documentUrls?.length || 0,
+        imageIdsLength: data.imageIds?.length || 0,
+        documentIdsLength: data.documentIds?.length || 0,
+        title: data.title
+      });
+      
+      if (data.imageUrls?.length || data.documentUrls?.length || data.imageIds?.length || data.documentIds?.length) {
+        results.siteDiaries.push({ ...data, id: doc.id });
+        console.log(`✅ SiteDiary追加: ${doc.id} "${data.title}" (images: ${(data.imageUrls?.length || 0) + (data.imageIds?.length || 0)}, docs: ${(data.documentUrls?.length || 0) + (data.documentIds?.length || 0)})`);
+      }
+    });
+
     console.log('✅ ドキュメント取得完了:', {
       transactions: results.transactions.length,
       sites: results.sites.length,
       siteCategories: results.siteCategories.length,
       siteIncomes: results.siteIncomes.length,
-      siteExpenses: results.siteExpenses.length
+      siteExpenses: results.siteExpenses.length,
+      siteDiaries: results.siteDiaries.length
     });
 
     // デバッグ: 実際に取得されたURLの一部を表示
@@ -431,6 +459,11 @@ const checkDbUrlsInStorage = async (
   // SiteExpensesをチェック
   for (const expense of dbDocuments.siteExpenses) {
     await checkEntityUrls(expense, 'siteExpense', storageUrls, storageUrlsOriginal, storagePathToUrl, issues);
+  }
+
+  // SiteDiariesをチェック
+  for (const diary of dbDocuments.siteDiaries) {
+    await checkEntityUrls(diary, 'siteDiary', storageUrls, storageUrlsOriginal, storagePathToUrl, issues);
   }
 };
 
